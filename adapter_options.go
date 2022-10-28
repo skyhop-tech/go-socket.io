@@ -1,6 +1,10 @@
 package socketio
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/gomodule/redigo/redis"
+)
 
 // RedisAdapterOptions is configuration to create new adapter
 type RedisAdapterOptions struct {
@@ -9,6 +13,7 @@ type RedisAdapterOptions struct {
 	// deprecated. Usage Addr options
 	Port     string
 	Addr     string
+	Database int
 	Prefix   string
 	Network  string
 	Password string
@@ -29,6 +34,18 @@ func defaultOptions() *RedisAdapterOptions {
 	}
 }
 
+func (ro *RedisAdapterOptions) getDialOptions() []redis.DialOption {
+	var redisOpts []redis.DialOption
+	if len(ro.Password) > 0 {
+		redisOpts = append(redisOpts, redis.DialPassword(ro.Password))
+	}
+	if ro.Database != 0 {
+		redisOpts = append(redisOpts, redis.DialDatabase(ro.Database))
+	}
+
+	return redisOpts
+}
+
 func getOptions(opts *RedisAdapterOptions) *RedisAdapterOptions {
 	options := defaultOptions()
 
@@ -39,6 +56,10 @@ func getOptions(opts *RedisAdapterOptions) *RedisAdapterOptions {
 
 		if opts.Port != "" {
 			options.Port = opts.Port
+		}
+
+		if opts.Database != 0 {
+			options.Database = opts.Database
 		}
 
 		if opts.Addr != "" {
