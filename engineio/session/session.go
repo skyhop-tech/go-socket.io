@@ -8,10 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/googollee/go-socket.io/engineio/frame"
-	"github.com/googollee/go-socket.io/engineio/packet"
-	"github.com/googollee/go-socket.io/engineio/payload"
-	"github.com/googollee/go-socket.io/engineio/transport"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/frame"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/packet"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/payload"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/transport"
+)
+
+var (
+	_ = payload.Error(nil)
 )
 
 // Pauser is connection which can be paused and resumes.
@@ -77,11 +81,12 @@ func (s *Session) Close() error {
 // When finished writing, the caller MUST Close the ReadCloser to unlock the
 // connection's FramerReader.
 func (s *Session) NextReader() (FrameType, io.ReadCloser, error) {
+	var defaultFt FrameType
 	for {
 		ft, pt, r, err := s.nextReader()
 		if err != nil {
 			s.Close()
-			return 0, nil, err
+			return defaultFt, nil, err
 		}
 
 		switch pt {
@@ -100,18 +105,18 @@ func (s *Session) NextReader() (FrameType, io.ReadCloser, error) {
 			}()
 			if err != nil {
 				s.Close()
-				return 0, nil, err
+				return defaultFt, nil, err
 			}
 			// Read another frame.
 			if err := s.setDeadline(); err != nil {
 				s.Close()
-				return 0, nil, err
+				return defaultFt, nil, err
 			}
 
 		case packet.CLOSE:
 			r.Close() // unlocks the wrapped connection's FrameReader
 			s.Close()
-			return 0, nil, io.EOF
+			return defaultFt, nil, io.EOF
 
 		case packet.MESSAGE:
 			// Caller must Close the ReadCloser to unlock the connection's

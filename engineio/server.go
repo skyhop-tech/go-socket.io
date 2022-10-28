@@ -12,8 +12,12 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/googollee/go-socket.io/engineio/session"
-	"github.com/googollee/go-socket.io/engineio/transport"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/session"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/transport"
+)
+
+var (
+	_ = websocket.HandshakeError{}
 )
 
 // Server is instance of server

@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	socketio "github.com/googollee/go-socket.io"
+	socketio "github.com/skyhop-tech/go-sky/internal/go-socket.io"
 )
 
 const (

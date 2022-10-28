@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/googollee/go-socket.io/parser"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/parser"
 )
 
 // Namespace describes a communication channel that allows you to split the logic of your application

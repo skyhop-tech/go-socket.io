@@ -1,6 +1,6 @@
 # go-socket.io
 
-[![GoDoc](http://godoc.org/github.com/googollee/go-socket.io?status.svg)](http://godoc.org/github.com/googollee/go-socket.io) 
+[![GoDoc](http://godoc.org/github.com/googollee/go-socket.io?status.svg)](http://godoc.org/github.com/googollee/go-socket.io)
 [![Build Status](https://github.com/googollee/go-socket.io/workflows/Unit%20tests/badge.svg)](https://github.com/googollee/go-socket.io/actions/workflows/unittest.yaml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/googollee/go-socket.io)](https://goreportcard.com/report/github.com/googollee/go-socket.io)
 
@@ -41,10 +41,10 @@ Please check more examples into folder in project for details. [Examples](https:
 
 ## FAQ
 
-It is some popular questions about this repository: 
+It is some popular questions about this repository:
 
 - Is this library supported socket.io version 2?
-    - No, but if you wanna you can help to do it. Join us in community chat Telegram   
+    - No, but if you wanna you can help to do it. Join us in community chat Telegram
 - How to use go-socket.io with CORS?
     - Please see examples in [directory](https://github.com/googollee/go-socket.io/tree/master/_examples)
 - What is minimal version Golang support for this library?

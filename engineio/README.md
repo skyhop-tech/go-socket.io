@@ -46,10 +46,10 @@ func main() {
 			if err != nil {
 				log.Fatalln("accept error:", err)
 			}
-			
+
 			go func() {
 				defer conn.Close()
-				
+
 				for {
 					t, r, _ := conn.NextReader()
 					b, _ := ioutil.ReadAll(r)
@@ -65,7 +65,7 @@ func main() {
 
 	http.Handle("/engine.io/", server)
 	log.Println("Serving at localhost:5000...")
-	
+
 	log.Fatal(http.ListenAndServe(":5000", nil))
 }
 ```

@@ -12,10 +12,10 @@ import (
 	"net/url"
 	"sync/atomic"
 
-	"github.com/googollee/go-socket.io/engineio/packet"
-	"github.com/googollee/go-socket.io/engineio/payload"
-	"github.com/googollee/go-socket.io/engineio/transport"
-	"github.com/googollee/go-socket.io/engineio/transport/utils"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/packet"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/payload"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/transport"
+	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/transport/utils"
 )
 
 type clientConn struct {

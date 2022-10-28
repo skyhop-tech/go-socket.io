@@ -13,7 +13,7 @@ import (
 
 func main() {
 	server := socketio.NewServer(nil)
-	
+
 	server.OnConnect("/", func(s socketio.Conn) error {
 		s.SetContext("")
 		fmt.Println("connected:", s.ID())
@@ -156,7 +156,7 @@ socket.on('some:event', function (msg) {
 ```go
 
 server.OnDisconnect("/", func(so socketio.Conn, reason string) {
-  	log.Println("closed", reason)
+	log.Println("closed", reason)
 })
 ```
 
