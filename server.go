@@ -3,8 +3,6 @@ package socketio
 import (
 	"net/http"
 
-	"github.com/gomodule/redigo/redis"
-
 	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio"
 	"github.com/skyhop-tech/go-sky/internal/go-socket.io/parser"
 )
@@ -28,17 +26,7 @@ func NewServer(opts *engineio.Options) *Server {
 
 // Adapter sets redis broadcast adapter.
 func (s *Server) Adapter(opts *RedisAdapterOptions) (bool, error) {
-	opts = getOptions(opts)
-	redisOpts := opts.getDialOptions()
-
-	conn, err := redis.Dial(opts.Network, opts.getAddr(), redisOpts...)
-	if err != nil {
-		return false, err
-	}
-
 	s.redisAdapter = opts
-
-	conn.Close()
 	return true, nil
 }
 
