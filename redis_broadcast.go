@@ -1,6 +1,7 @@
 package socketio
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -14,7 +15,7 @@ type redisBroadcast struct {
 	uid string
 }
 
-func newRedisBroadcast(nsp string, opts *RedisAdapterOptions) (*redisBroadcast, error) {
+func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOptions) (*redisBroadcast, error) {
 	addr := fmt.Sprintf("%s:%d", opts.Host, opts.Port)
 
 	client := redis.NewClient(&redis.Options{
@@ -32,10 +33,24 @@ func newRedisBroadcast(nsp string, opts *RedisAdapterOptions) (*redisBroadcast, 
 		return nil, errors.Wrap(err, "ping redis")
 	}
 
+	pErr := client.Publish("channel1", "payload").Err()
+	if pErr != nil {
+		panic(pErr)
+	}
+
 	uid := newV4UUID()
 	rbc := &redisBroadcast{
 		uid: uid,
 	}
+
+	_, err = rbc.subscribe(client, "channel1")
+	if err != nil {
+		panic(err)
+	}
+
+	//for m := range sub.Channel() {
+	//fmt.Println("got a message", m)
+	//}
 
 	return rbc, nil
 }
@@ -83,4 +98,30 @@ func (bc *redisBroadcast) Len(room string) int {
 // list of all the rooms the connection is joined to.
 func (bc *redisBroadcast) Rooms(connection Conn) []string {
 	return nil
+}
+
+func (bc *redisBroadcast) subscribe(client *redis.Client, channel string) (<-chan *redis.Message, error) {
+
+	sub := client.Subscribe("channel1")
+
+	// Force subscription to wait
+	subscription, err := sub.Receive()
+	if err != nil {
+		return nil, err
+	}
+
+	// Should be *Subscription, but others are possible if other actions have been
+	// taken on sub since it was created.
+	switch subscription.(type) {
+	case *redis.Subscription:
+		fmt.Println("subscribe succeeded")
+	case *redis.Message:
+		fmt.Println("received first message")
+	case *redis.Pong:
+		fmt.Println("pong received")
+	default:
+		fmt.Println("handle error")
+	}
+
+	return sub.Channel(), err
 }

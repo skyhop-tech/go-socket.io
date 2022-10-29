@@ -1,6 +1,7 @@
 package socketio
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"sync"
@@ -19,18 +20,22 @@ type namespaceHandler struct {
 	onError      func(conn Conn, err error)
 }
 
-func newNamespaceHandler(nsp string, adapterOpts *RedisAdapterOptions) *namespaceHandler {
+func newNamespaceHandler(ctx context.Context, nsp string, adapterOpts *RedisAdapterOptions) (*namespaceHandler, error) {
 	var broadcast Broadcast
 	if adapterOpts == nil {
 		broadcast = newBroadcast()
 	} else {
-		broadcast, _ = newRedisBroadcast(nsp, adapterOpts)
+		var err error
+		broadcast, err = newRedisBroadcast(ctx, nsp, adapterOpts)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &namespaceHandler{
 		broadcast: broadcast,
 		events:    make(map[string]*funcHandler),
-	}
+	}, nil
 }
 
 func (nh *namespaceHandler) OnConnect(f func(Conn) error) {

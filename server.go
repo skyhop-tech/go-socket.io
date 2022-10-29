@@ -1,6 +1,7 @@
 package socketio
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio"
@@ -41,40 +42,40 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // OnConnect set a handler function f to handle open event for namespace.
-func (s *Server) OnConnect(namespace string, f func(Conn) error) {
+func (s *Server) OnConnect(ctx context.Context, namespace string, f func(Conn) error) {
 	h := s.getNamespace(namespace)
 	if h == nil {
-		h = s.createNamespace(namespace)
+		h = s.createNamespace(ctx, namespace)
 	}
 
 	h.OnConnect(f)
 }
 
 // OnDisconnect set a handler function f to handle disconnect event for namespace.
-func (s *Server) OnDisconnect(namespace string, f func(Conn, string)) {
+func (s *Server) OnDisconnect(ctx context.Context, namespace string, f func(Conn, string)) {
 	h := s.getNamespace(namespace)
 	if h == nil {
-		h = s.createNamespace(namespace)
+		h = s.createNamespace(ctx, namespace)
 	}
 
 	h.OnDisconnect(f)
 }
 
 // OnError set a handler function f to handle error for namespace.
-func (s *Server) OnError(namespace string, f func(Conn, error)) {
+func (s *Server) OnError(ctx context.Context, namespace string, f func(Conn, error)) {
 	h := s.getNamespace(namespace)
 	if h == nil {
-		h = s.createNamespace(namespace)
+		h = s.createNamespace(ctx, namespace)
 	}
 
 	h.OnError(f)
 }
 
 // OnEvent set a handler function f to handle event for namespace.
-func (s *Server) OnEvent(namespace, event string, f interface{}) {
+func (s *Server) OnEvent(ctx context.Context, namespace, event string, f interface{}) {
 	h := s.getNamespace(namespace)
 	if h == nil {
-		h = s.createNamespace(namespace)
+		h = s.createNamespace(ctx, namespace)
 	}
 
 	h.OnEvent(event, f)
@@ -297,12 +298,17 @@ func (s *Server) serveRead(c *conn) {
 	}
 }
 
-func (s *Server) createNamespace(nsp string) *namespaceHandler {
+// Panics if fails to create a namespace handler this may include things like
+// failing to connect to redis.
+func (s *Server) createNamespace(ctx context.Context, nsp string) *namespaceHandler {
 	if nsp == aliasRootNamespace {
 		nsp = rootNamespace
 	}
 
-	handler := newNamespaceHandler(nsp, s.redisAdapter)
+	handler, err := newNamespaceHandler(ctx, nsp, s.redisAdapter)
+	if err != nil {
+		panic(err)
+	}
 	s.handlers.Set(nsp, handler)
 
 	return handler
