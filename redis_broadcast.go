@@ -2,12 +2,25 @@ package socketio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
+
+// RedisAdapterOptions is configuration to create new adapter
+type RedisAdapterOptions struct {
+	Host     string
+	Port     int
+	Database int
+	Prefix   string
+	Network  string
+	Password string
+	Logger   *logrus.Logger
+}
 
 // redisBroadcast gives Join, Leave & BroadcastTO server API support to socket.io along with room management
 // map of rooms where each room contains a map of connection id to connections in that room
@@ -16,6 +29,7 @@ type redisBroadcast struct {
 	client *redis.Client
 	// Used to prefix all redis keys / channels
 	prefix string
+	logger *logrus.Logger
 }
 
 func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOptions) (*redisBroadcast, error) {
@@ -36,16 +50,17 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 		return nil, errors.Wrap(err, "ping redis")
 	}
 
-	//pErr := client.Publish("channel2", "payload").Err()
-	//if pErr != nil {
-	//panic(pErr)
-	//}
+	pErr := client.Publish(fmt.Sprintf("%s%s", opts.Prefix, "backbone"), "payload").Err()
+	if pErr != nil {
+		panic(pErr)
+	}
 
 	uid := newV4UUID()
 	rbc := &redisBroadcast{
 		uid:    uid,
 		client: client,
 		prefix: opts.Prefix,
+		logger: opts.Logger,
 	}
 
 	// We will use a single channel as the backbone for sending messages
@@ -105,11 +120,27 @@ func (bc *redisBroadcast) Rooms(connection Conn) []string {
 	return nil
 }
 
+// A message gets passed back and forth between
+// instances of this application
+type message struct {
+	// Content of the message
+	Content string `json:"content"`
+	// Rooms to whic this message is intended to be
+	// sent. When we get a message with rooms that
+	// we're not currently tracking in memory we'll
+	// add it them.
+	Rooms []string `json:"rooms"`
+}
+
+// Listen on a goroutine for incoming messages & decode
+// each message.
 func (bc *redisBroadcast) listen(channel string) error {
 	incoming, err := subscribe(bc.client, channel)
 	if err != nil {
 		return errors.Wrap(err, "subscribe")
 	}
+
+	bc.logger.Debugf("Subscribed to channel %s", channel)
 
 	go func() {
 		for {
@@ -119,7 +150,17 @@ func (bc *redisBroadcast) listen(channel string) error {
 					fmt.Printf("INCOMING nil: closing\n", in)
 					break
 				}
-				fmt.Printf("INCOMING: %+v\n", in)
+				var m message
+				err := json.Unmarshal([]byte(in.Payload), &m)
+				if err != nil {
+					bc.logger.WithFields(logrus.Fields{
+						"channel": channel,
+						"error":   err,
+						"message": in.Payload,
+					}).Error("Channel sent an invalid message format, dropping message...")
+					continue
+				}
+				fmt.Printf("INCOMING: %+v\n", m)
 			}
 		}
 		fmt.Println("Shutting down go routine listening")
@@ -130,27 +171,27 @@ func (bc *redisBroadcast) listen(channel string) error {
 
 func subscribe(client *redis.Client, channel string) (<-chan *redis.Message, error) {
 
-	fmt.Println("subscribing to ", channel)
 	sub := client.Subscribe(channel)
 
-	// Force subscription to wait
+	// Force subscription to wait for redis
+	// to reply
 	subscription, err := sub.Receive()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "receive on channel %s", channel)
 	}
 
 	// Should be *Subscription, but others are possible if other actions have been
 	// taken on sub since it was created.
 	switch subscription.(type) {
 	case *redis.Subscription:
-		fmt.Println("subscribe succeeded")
+		// Subscribe succeeded
 	case *redis.Message:
-		fmt.Println("received first message")
+		// Message came in very early, we'll ignore it
 	case *redis.Pong:
-		fmt.Println("pong received")
+		// Healthcheck
 	default:
-		fmt.Println("handle error")
+		return nil, errors.Errorf("failed to subscribe to channel %s", channel)
 	}
 
-	return sub.Channel(), err
+	return sub.Channel(), nil
 }
