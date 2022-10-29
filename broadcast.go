@@ -15,8 +15,8 @@ type Broadcast interface {
 	SendAll(event string, args ...interface{})    // SendAll will send an event with args to all the rooms
 	ForEach(room string, f EachFunc)              // ForEach sends data by DataFunc, if room does not exits sends nothing
 	Len(room string) int                          // Len gives number of connections in the room
-	Rooms(connection Conn) []string               // Gives list of all the rooms if no connection given, else list of all the rooms the connection joined
-	AllRooms() []string                           // Gives list of all the rooms the connection joined
+	Rooms(connection Conn) []string               // Rooms gives list of all the rooms if no connection given, else list of all the rooms the connection joined
+	AllRooms() []string                           // AllRooms gives list of all the rooms the connection joined
 }
 
 // broadcast gives Join, Leave & BroadcastTO server API support to socket.io along with room management
