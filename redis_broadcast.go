@@ -12,7 +12,10 @@ import (
 // redisBroadcast gives Join, Leave & BroadcastTO server API support to socket.io along with room management
 // map of rooms where each room contains a map of connection id to connections in that room
 type redisBroadcast struct {
-	uid string
+	uid    string
+	client *redis.Client
+	// Used to prefix all redis keys / channels
+	prefix string
 }
 
 func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOptions) (*redisBroadcast, error) {
@@ -33,24 +36,26 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 		return nil, errors.Wrap(err, "ping redis")
 	}
 
-	pErr := client.Publish("channel1", "payload").Err()
-	if pErr != nil {
-		panic(pErr)
-	}
+	//pErr := client.Publish("channel2", "payload").Err()
+	//if pErr != nil {
+	//panic(pErr)
+	//}
 
 	uid := newV4UUID()
 	rbc := &redisBroadcast{
-		uid: uid,
+		uid:    uid,
+		client: client,
+		prefix: opts.Prefix,
 	}
 
-	_, err = rbc.subscribe(client, "channel1")
-	if err != nil {
-		panic(err)
+	// We will use a single channel as the backbone for sending messages
+	// between instances of this application. Once a message is received
+	// on this channel it is propagated to all clients connected to this
+	// application instance.
+	lErr := rbc.listen(fmt.Sprintf("%s%s", opts.Prefix, "backbone"))
+	if lErr != nil {
+		return nil, errors.Wrap(lErr, "listen")
 	}
-
-	//for m := range sub.Channel() {
-	//fmt.Println("got a message", m)
-	//}
 
 	return rbc, nil
 }
@@ -100,9 +105,33 @@ func (bc *redisBroadcast) Rooms(connection Conn) []string {
 	return nil
 }
 
-func (bc *redisBroadcast) subscribe(client *redis.Client, channel string) (<-chan *redis.Message, error) {
+func (bc *redisBroadcast) listen(channel string) error {
+	incoming, err := subscribe(bc.client, channel)
+	if err != nil {
+		return errors.Wrap(err, "subscribe")
+	}
 
-	sub := client.Subscribe("channel1")
+	go func() {
+		for {
+			select {
+			case in := <-incoming:
+				if in == nil {
+					fmt.Printf("INCOMING nil: closing\n", in)
+					break
+				}
+				fmt.Printf("INCOMING: %+v\n", in)
+			}
+		}
+		fmt.Println("Shutting down go routine listening")
+	}()
+
+	return nil
+}
+
+func subscribe(client *redis.Client, channel string) (<-chan *redis.Message, error) {
+
+	fmt.Println("subscribing to ", channel)
+	sub := client.Subscribe(channel)
 
 	// Force subscription to wait
 	subscription, err := sub.Receive()
