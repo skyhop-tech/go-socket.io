@@ -20,6 +20,10 @@ const (
 	// connections in the given chat room.
 	ChatType messageType = "chat"
 
+	// Broadcased when a connection joins
+	// a room
+	JoinType messageType = "join"
+
 	// Publish this type of message to
 	// tell other instances to clear
 	// the given rooms
@@ -90,7 +94,7 @@ type description struct {
 	// Map of instanceIDs to number of members
 	// reported by that instance. Represents
 	// the number of members in the room
-	// held by each instance excluding this
+	// held by each instance including this
 	// one.
 	reportedMembers map[string]int
 }
@@ -118,7 +122,7 @@ type message struct {
 
 	// Content of the message in array form so we can send
 	// multiple messages in a single envelope.
-	Content []string `json:"content"`
+	Content []any `json:"content"`
 
 	// Rooms to which this message is intended to be
 	// sent. When we get a message with rooms that
@@ -206,6 +210,15 @@ func (bc *redisBroadcast) Join(room string, conn Conn) {
 	}
 	bc.unsafe.rooms[room].connections[conn.ID()] = conn
 
+	rooms := []metadata{
+		{
+			Name:    room,
+			Members: len(bc.unsafe.rooms[room].connections),
+		},
+	}
+
+	bc.publish(bc.unsafe.instanceId, bc.unsafe.channel, JoinType, rooms, "")
+
 	//pretty, err := json.MarshalIndent(bc.unsafe.rooms, "", "    ")
 	//fmt.Printf("%s joining room=%s\nROOMS AFTER\n%s\n%+v\n%+v\n", conn.ID(), room, pretty, err, bc.unsafe.rooms)
 }
@@ -246,7 +259,7 @@ func (bc *redisBroadcast) Clear(room string) {
 		},
 	}
 
-	bc.publish(bc.unsafe.instanceId, bc.unsafe.channel, ClearType, rooms, "_clear")
+	bc.publish(bc.unsafe.instanceId, bc.unsafe.channel, ClearType, rooms, "")
 }
 
 // Send sends given event & args to all the connections in the specified room.
@@ -322,10 +335,9 @@ func (bc *redisBroadcast) Len(room string) int {
 		return 0
 	}
 	desc := bc.unsafe.rooms[room]
-	// Get the count of connections on this instance
-	count := len(desc.connections)
 	// Add up the number of connections reported by
-	// other instances
+	// all instances including this one
+	var count int
 	for id, c := range desc.reportedMembers {
 		bc.logger.Tracef("%s reported %d", id, c)
 		count += c
@@ -384,14 +396,62 @@ func (bc *redisBroadcast) listen(channel string) error {
 					}).Error("Channel sent an invalid message format, dropping message...")
 					continue
 				}
-				pretty, err := json.MarshalIndent(m, "", "    ")
-				fmt.Printf("INCOMING\n%s\n%+v\n", pretty, err)
+				bc.handleMessage(&m)
 			}
 		}
 		fmt.Println("Shutting down go routine listening")
 	}()
 
 	return nil
+}
+
+// Anytime we get a message we parse as much info as we can to
+// keep our own state updated.
+func (bc *redisBroadcast) handleMessage(m *message) {
+	bc.unsafe.lock.Lock()
+	defer bc.unsafe.lock.Unlock()
+
+	pretty, err := json.MarshalIndent(m, "", "    ")
+	fmt.Printf("INCOMING %s\n%s\n%+v\n", m.Type, pretty, err)
+
+	// Each message contains metadata about the rooms
+	// the message applies to, make use of it
+	for _, meta := range m.Rooms {
+		// Add the room to the list of rooms we are currently
+		// aware of if necessary
+		if _, ok := bc.unsafe.rooms[meta.Name]; !ok {
+			bc.unsafe.rooms[meta.Name] = description{
+				name:            meta.Name,
+				connections:     make(map[string]Conn),
+				reportedMembers: make(map[string]int),
+			}
+		}
+		// Update the number of memebers reported by the instance that sent
+		// this message
+		bc.unsafe.rooms[meta.Name].reportedMembers[m.InstanceId] = meta.Members
+	}
+
+	switch m.Type {
+	// If this is a chat message then emit to all rooms
+	// passed into the chat message
+	case ChatType:
+		for _, meta := range m.Rooms {
+			if _, ok := bc.unsafe.rooms[meta.Name]; !ok {
+				continue
+			}
+			for _, conn := range bc.unsafe.rooms[meta.Name].connections {
+				conn.Emit(m.Event, m.Content...)
+			}
+		}
+	// Clear the entire room
+	case ClearType:
+		for _, meta := range m.Rooms {
+			if _, ok := bc.unsafe.rooms[meta.Name]; !ok {
+				continue
+			}
+			delete(bc.unsafe.rooms, meta.Name)
+		}
+	}
 }
 
 func subscribe(client *redis.Client, channel string) (<-chan *redis.Message, error) {
@@ -422,17 +482,12 @@ func subscribe(client *redis.Client, channel string) (<-chan *redis.Message, err
 }
 
 // publish is the way we talk with other instances of this application.
-func (bc *redisBroadcast) publish(id, channel string, typ messageType, rooms []metadata, event string, args ...interface{}) {
-	var messages []string
-	for _, arg := range args {
-		messages = append(messages, fmt.Sprintf("%+v", arg))
-	}
-
+func (bc *redisBroadcast) publish(id, channel string, typ messageType, rooms []metadata, event string, args ...any) {
 	m := message{
 		InstanceId: id,
 		Type:       typ,
 		Event:      event,
-		Content:    messages,
+		Content:    args,
 		Rooms:      rooms,
 	}
 
