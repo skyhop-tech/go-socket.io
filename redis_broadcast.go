@@ -111,6 +111,10 @@ type message struct {
 	// that there are 3 connections in room A.
 	InstanceId string `json:"instance_id"`
 
+	// The ID of the client connection related to this
+	// message.
+	ClientId *string `json:"client_id"`
+
 	// The type of message determines what we should do
 	// with it e.g. a "chat" message should have its
 	// message emitted to all connections in the target
@@ -131,6 +135,9 @@ type message struct {
 	Rooms []metadata `json:"rooms"`
 }
 
+// Instances send metadata about rooms they're
+// aware of to other instances to keep each
+// other in sync.
 type metadata struct {
 	// Room name
 	Name string `json:"name"`
@@ -184,7 +191,7 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 }
 
 // AllRooms gives list of all rooms that this instance is currently
-// aware of. Instance becomes aware of more rooms when clients join
+// aware of. Instance become aware of more rooms when clients join
 // and send chat messages to them.
 func (bc *redisBroadcast) AllRooms() []string {
 	bc.unsafe.lock.RLock()
@@ -208,7 +215,9 @@ func (bc *redisBroadcast) Join(room string, conn Conn) {
 			reportedMembers: make(map[string]int),
 		}
 	}
-	bc.unsafe.rooms[room].connections[conn.ID()] = conn
+
+	client := conn.ID()
+	bc.unsafe.rooms[room].connections[client] = conn
 
 	rooms := []metadata{
 		{
@@ -217,7 +226,8 @@ func (bc *redisBroadcast) Join(room string, conn Conn) {
 		},
 	}
 
-	bc.publish(bc.unsafe.instanceId, bc.unsafe.channel, JoinType, rooms, "")
+	// Let all instances know that a client joined this room.
+	bc.publish(&client, bc.unsafe.instanceId, bc.unsafe.channel, JoinType, rooms, "")
 
 	//pretty, err := json.MarshalIndent(bc.unsafe.rooms, "", "    ")
 	//fmt.Printf("%s joining room=%s\nROOMS AFTER\n%s\n%+v\n%+v\n", conn.ID(), room, pretty, err, bc.unsafe.rooms)
@@ -259,7 +269,7 @@ func (bc *redisBroadcast) Clear(room string) {
 		},
 	}
 
-	bc.publish(bc.unsafe.instanceId, bc.unsafe.channel, ClearType, rooms, "")
+	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ClearType, rooms, "")
 }
 
 // Send sends given event & args to all the connections in the specified room.
@@ -285,7 +295,7 @@ func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 		},
 	}
 
-	bc.publish(bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args)
+	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args)
 }
 
 // SendAll sends given event & args to all the connections to all the rooms.
@@ -309,7 +319,7 @@ func (bc *redisBroadcast) SendAll(event string, args ...interface{}) {
 		})
 	}
 
-	bc.publish(bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args)
+	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args)
 }
 
 // ForEach sends data returned by DataFunc, if room does not exits sends nothing.
@@ -368,6 +378,63 @@ func (bc *redisBroadcast) Rooms(conn Conn) []string {
 	return rooms
 }
 
+func subscribe(client *redis.Client, channel string) (<-chan *redis.Message, error) {
+
+	sub := client.Subscribe(channel)
+
+	// Force subscription to wait for redis
+	// to reply
+	subscription, err := sub.Receive()
+	if err != nil {
+		return nil, errors.Wrapf(err, "receive on channel %s", channel)
+	}
+
+	// Should be *Subscription, but others are possible if other actions have been
+	// taken on sub since it was created.
+	switch subscription.(type) {
+	case *redis.Subscription:
+		// Subscribe succeeded
+	case *redis.Message:
+		// Message came in very early, we'll ignore it
+	case *redis.Pong:
+		// Healthcheck
+	default:
+		return nil, errors.Errorf("failed to subscribe to channel %s", channel)
+	}
+
+	return sub.Channel(), nil
+}
+
+// publish is the way we talk with other instances of this application.
+func (bc *redisBroadcast) publish(client *string, id, channel string, typ messageType, rooms []metadata, event string, args ...any) {
+	m := message{
+		InstanceId: id,
+		ClientId:   client, // only happens when a client joins
+		Type:       typ,
+		Event:      event,
+		Content:    args,
+		Rooms:      rooms,
+	}
+
+	payload, err := json.Marshal(m)
+	if err != nil {
+		bc.logger.WithFields(logrus.Fields{
+			"error":   err,
+			"message": m,
+		}).Error("SendAll() Failed to encode message. Dropping")
+		return
+	}
+
+	pErr := bc.client.Publish(channel, payload).Err()
+	if pErr != nil {
+		bc.logger.WithFields(logrus.Fields{
+			"error":   pErr,
+			"message": m,
+		}).Error("SendAll() Failed to publish message. Dropping")
+		return
+	}
+}
+
 // Listen on a goroutine for incoming messages & decode
 // each message.
 func (bc *redisBroadcast) listen(channel string) error {
@@ -411,8 +478,12 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 	bc.unsafe.lock.Lock()
 	defer bc.unsafe.lock.Unlock()
 
+	var client string
+	if m.ClientId != nil {
+		client = *m.ClientId
+	}
 	pretty, err := json.MarshalIndent(m, "", "    ")
-	fmt.Printf("INCOMING %s\n%s\n%+v\n", m.Type, pretty, err)
+	fmt.Printf("INCOMING %+v %s\n%s\n%+v\n", client, m.Type, pretty, err)
 
 	// Each message contains metadata about the rooms
 	// the message applies to, make use of it
@@ -451,61 +522,5 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 			}
 			delete(bc.unsafe.rooms, meta.Name)
 		}
-	}
-}
-
-func subscribe(client *redis.Client, channel string) (<-chan *redis.Message, error) {
-
-	sub := client.Subscribe(channel)
-
-	// Force subscription to wait for redis
-	// to reply
-	subscription, err := sub.Receive()
-	if err != nil {
-		return nil, errors.Wrapf(err, "receive on channel %s", channel)
-	}
-
-	// Should be *Subscription, but others are possible if other actions have been
-	// taken on sub since it was created.
-	switch subscription.(type) {
-	case *redis.Subscription:
-		// Subscribe succeeded
-	case *redis.Message:
-		// Message came in very early, we'll ignore it
-	case *redis.Pong:
-		// Healthcheck
-	default:
-		return nil, errors.Errorf("failed to subscribe to channel %s", channel)
-	}
-
-	return sub.Channel(), nil
-}
-
-// publish is the way we talk with other instances of this application.
-func (bc *redisBroadcast) publish(id, channel string, typ messageType, rooms []metadata, event string, args ...any) {
-	m := message{
-		InstanceId: id,
-		Type:       typ,
-		Event:      event,
-		Content:    args,
-		Rooms:      rooms,
-	}
-
-	payload, err := json.Marshal(m)
-	if err != nil {
-		bc.logger.WithFields(logrus.Fields{
-			"error":   err,
-			"message": m,
-		}).Error("SendAll() Failed to encode message. Dropping")
-		return
-	}
-
-	pErr := bc.client.Publish(channel, payload).Err()
-	if pErr != nil {
-		bc.logger.WithFields(logrus.Fields{
-			"error":   pErr,
-			"message": m,
-		}).Error("SendAll() Failed to publish message. Dropping")
-		return
 	}
 }
