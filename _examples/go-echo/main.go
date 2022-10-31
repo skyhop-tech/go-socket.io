@@ -5,7 +5,7 @@ import (
 
 	"github.com/labstack/echo"
 
-	socketio "github.com/skyhop-tech/go-sky/internal/go-socket.io"
+	socketio "github.com/skyhop-tech/go-socket.io"
 )
 
 func main() {

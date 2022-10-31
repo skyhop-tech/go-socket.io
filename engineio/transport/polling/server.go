@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/payload"
+	"github.com/skyhop-tech/go-socket.io/engineio/payload"
 )
 
 type serverConn struct {

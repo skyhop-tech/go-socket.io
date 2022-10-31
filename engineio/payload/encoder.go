@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"io"
 
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/frame"
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/packet"
+	"github.com/skyhop-tech/go-socket.io/engineio/frame"
+	"github.com/skyhop-tech/go-socket.io/engineio/packet"
 )
 
 type writerFeeder interface {

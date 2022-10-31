@@ -2,7 +2,7 @@ package parser
 
 import (
 	"bytes"
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/session"
+	"github.com/skyhop-tech/go-socket.io/engineio/session"
 	"io"
 	"reflect"
 	"testing"

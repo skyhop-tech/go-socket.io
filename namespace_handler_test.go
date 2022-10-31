@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/parser"
+	"github.com/skyhop-tech/go-socket.io/parser"
 )
 
 func TestNamespaceHandler(t *testing.T) {

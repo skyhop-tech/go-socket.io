@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	socketio "github.com/skyhop-tech/go-sky/internal/go-socket.io"
+	socketio "github.com/skyhop-tech/go-socket.io"
 )
 
 func main() {

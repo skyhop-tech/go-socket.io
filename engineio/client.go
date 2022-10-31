@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/frame"
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/packet"
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/session"
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/transport"
+	"github.com/skyhop-tech/go-socket.io/engineio/frame"
+	"github.com/skyhop-tech/go-socket.io/engineio/packet"
+	"github.com/skyhop-tech/go-socket.io/engineio/session"
+	"github.com/skyhop-tech/go-socket.io/engineio/transport"
 )
 
 // Pauser is connection which can be paused and resumes.

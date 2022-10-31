@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio"
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/parser"
+	"github.com/skyhop-tech/go-socket.io/engineio"
+	"github.com/skyhop-tech/go-socket.io/parser"
 )
 
 // Server is a go-socket.io server.

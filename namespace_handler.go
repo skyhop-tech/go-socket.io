@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/parser"
+	"github.com/skyhop-tech/go-socket.io/parser"
 )
 
 type namespaceHandler struct {

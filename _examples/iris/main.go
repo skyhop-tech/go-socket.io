@@ -6,7 +6,7 @@ import (
 
 	"github.com/kataras/iris/v12"
 
-	socketio "github.com/skyhop-tech/go-sky/internal/go-socket.io"
+	socketio "github.com/skyhop-tech/go-socket.io"
 )
 
 func main() {

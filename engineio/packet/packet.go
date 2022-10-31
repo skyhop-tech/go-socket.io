@@ -1,6 +1,6 @@
 package packet
 
-import "github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/frame"
+import "github.com/skyhop-tech/go-socket.io/engineio/frame"
 
 // Type is the type of packet
 type Type int

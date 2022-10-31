@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/packet"
-	"github.com/skyhop-tech/go-sky/internal/go-socket.io/engineio/transport"
+	"github.com/skyhop-tech/go-socket.io/engineio/packet"
+	"github.com/skyhop-tech/go-socket.io/engineio/transport"
 )
 
 // Dialer is dialer configure.
