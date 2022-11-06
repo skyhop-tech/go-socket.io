@@ -2,6 +2,7 @@ package socketio
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/skyhop-tech/go-socket.io/engineio"
@@ -222,9 +223,13 @@ func (s *Server) serveError(c *conn) {
 		select {
 		case <-c.quitChan:
 			return
+
+		// Errors come down this channel when for example
+		// one of your event handler functions panic
 		case err := <-c.errorChan:
-			errMsg, ok := err.(errorMessage)
+			errMsg, ok := err.(*errorMessage)
 			if !ok {
+				fmt.Println("server.go expected a *errorMessage. this is a coding error", err)
 				continue
 			}
 
