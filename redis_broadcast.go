@@ -295,7 +295,7 @@ func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 		},
 	}
 
-	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args)
+	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args...)
 }
 
 // SendAll sends given event & args to all the connections to all the rooms.
@@ -319,7 +319,7 @@ func (bc *redisBroadcast) SendAll(event string, args ...interface{}) {
 		})
 	}
 
-	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args)
+	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args...)
 }
 
 // ForEach sends data returned by DataFunc, if room does not exits sends nothing.
