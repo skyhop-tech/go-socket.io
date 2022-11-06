@@ -244,6 +244,8 @@ func (bc *redisBroadcast) Leave(room string, conn Conn) {
 }
 
 // LeaveAll leaves the given connection from all rooms.
+// This function is called when the client calls conn.Close().
+// A browser refresh may trigger this as well
 func (bc *redisBroadcast) LeaveAll(conn Conn) {
 	bc.unsafe.lock.Lock()
 	defer bc.unsafe.lock.Unlock()
@@ -281,17 +283,13 @@ func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 		bc.logger.Debugf("Tried to send to room=%s that doesnt exist", room)
 		return
 	}
-	desc := bc.unsafe.rooms[room]
-	for _, conn := range desc.connections {
-		conn.Emit(event, args...)
-	}
 
 	// Everytime we publish a message we send what we know
 	// about the rooms we're sending the message to.
 	rooms := []metadata{
 		{
 			Name:    room,
-			Members: len(desc.connections),
+			Members: len(bc.unsafe.rooms[room].connections),
 		},
 	}
 
@@ -450,7 +448,7 @@ func (bc *redisBroadcast) listen(channel string) error {
 			select {
 			case in := <-incoming:
 				if in == nil {
-					fmt.Printf("INCOMING nil: closing\n", in)
+					bc.logger.Trace("INCOMING nil: closing")
 					break
 				}
 				var m message
@@ -466,7 +464,7 @@ func (bc *redisBroadcast) listen(channel string) error {
 				bc.handleMessage(&m)
 			}
 		}
-		fmt.Println("Shutting down go routine listening")
+		bc.logger.Trace("Shutting down go routine listening")
 	}()
 
 	return nil
@@ -480,7 +478,7 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 
 	var client string
 	if m.ClientId != nil {
-		client = *m.ClientId
+		client = *m.ClientId // only present on join event
 	}
 	pretty, err := json.MarshalIndent(m, "", "    ")
 	fmt.Printf("INCOMING %+v %s\n%s\n%+v\n", client, m.Type, pretty, err)
