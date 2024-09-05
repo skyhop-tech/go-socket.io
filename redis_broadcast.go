@@ -334,6 +334,40 @@ func (bc *redisBroadcast) ForEach(room string, f EachFunc) {
 	}
 }
 
+// ForEach sends data returned by DataFunc
+func (bc *redisBroadcast) JoinRoomsViaCallback(roomToJoin string, f EachConnFunc) error {
+	bc.unsafe.lock.RLock()
+	// copy the map because we cannot edit the originl while locked
+	copied := make(map[string]Conn, len(bc.unsafe.rooms))
+	for roomId, desc := range bc.unsafe.rooms {
+		if roomId == roomToJoin {
+			continue
+		}
+		for connId, conn := range desc.connections {
+			// skip if we already processed this connection
+			// a single connection may be in multiple rooms
+			if _, ok := copied[connId]; ok {
+				continue
+			}
+			ok, err := f(conn.Context())
+			if err != nil {
+				bc.unsafe.lock.RUnlock()
+				return err
+			}
+			if ok {
+				copied[connId] = conn
+			}
+		}
+	}
+	bc.unsafe.lock.RUnlock()
+
+	for _, currentConnection := range copied {
+		bc.Join(roomToJoin, currentConnection)
+	}
+
+	return nil
+}
+
 // Len gives number of connections in the room.
 func (bc *redisBroadcast) Len(room string) int {
 	bc.unsafe.lock.RLock()
@@ -475,13 +509,6 @@ func (bc *redisBroadcast) listen(channel string) error {
 func (bc *redisBroadcast) handleMessage(m *message) {
 	bc.unsafe.lock.Lock()
 	defer bc.unsafe.lock.Unlock()
-
-	var client string
-	if m.ClientId != nil {
-		client = *m.ClientId // only present on join event
-	}
-	pretty, err := json.MarshalIndent(m, "", "    ")
-	fmt.Printf("INCOMING %+v %s\n%s\n%+v\n", client, m.Type, pretty, err)
 
 	// Each message contains metadata about the rooms
 	// the message applies to, make use of it
