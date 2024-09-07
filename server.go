@@ -198,13 +198,11 @@ func (s *Server) ForEach(namespace string, room string, f EachFunc) bool {
 }
 
 // ForEach sends data by DataFunc, if room does not exit sends anything.
-func (s *Server) JoinRoomsViaCallback(namespace, roomToJoin string, f EachConnFunc) error {
+func (s *Server) JoinRoomsViaCallback(namespace, roomToJoin, identifier string) {
 	nspHandler := s.getNamespace(namespace)
 	if nspHandler != nil {
-		return nspHandler.broadcast.JoinRoomsViaCallback(roomToJoin, f)
+		nspHandler.broadcast.JoinRoomsViaCallback(roomToJoin, identifier)
 	}
-
-	return nil
 }
 
 func (s *Server) serveConn(conn engineio.Conn) {

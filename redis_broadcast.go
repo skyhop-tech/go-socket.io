@@ -28,6 +28,11 @@ const (
 	// tell other instances to clear
 	// the given rooms
 	ClearType messageType = "clear"
+
+	// Publish this type of message to
+	// tell other instances to join
+	// the give room via callback
+	JoinViaCallbackType messageType = "join_callback"
 )
 
 // RedisAdapterOptions is configuration to create new adapter
@@ -39,6 +44,7 @@ type RedisAdapterOptions struct {
 	Network  string
 	Password string
 	Logger   *logrus.Logger
+	Callback EachConnFunc
 }
 
 type redisBroadcast struct {
@@ -47,6 +53,11 @@ type redisBroadcast struct {
 	client *redis.Client
 
 	logger *logrus.Logger
+
+	// A callback is registered to the broadcast
+	// to run any app business logic needed across
+	// all instances.
+	callback EachConnFunc
 
 	// Any thread unsafe values should be keept
 	// in here
@@ -168,8 +179,9 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 
 	id := newV4UUID()
 	rbc := &redisBroadcast{
-		client: client,
-		logger: opts.Logger,
+		client:   client,
+		logger:   opts.Logger,
+		callback: opts.Callback,
 		unsafe: unsafe{
 			instanceId: id,
 			prefix:     opts.Prefix,
@@ -228,9 +240,6 @@ func (bc *redisBroadcast) Join(room string, conn Conn) {
 
 	// Let all instances know that a client joined this room.
 	bc.publish(&client, bc.unsafe.instanceId, bc.unsafe.channel, JoinType, rooms, "")
-
-	//pretty, err := json.MarshalIndent(bc.unsafe.rooms, "", "    ")
-	//fmt.Printf("%s joining room=%s\nROOMS AFTER\n%s\n%+v\n%+v\n", conn.ID(), room, pretty, err, bc.unsafe.rooms)
 }
 
 // Leave removes the given connection from the given room
@@ -250,7 +259,7 @@ func (bc *redisBroadcast) LeaveAll(conn Conn) {
 	bc.unsafe.lock.Lock()
 	defer bc.unsafe.lock.Unlock()
 
-	for room, _ := range bc.unsafe.rooms {
+	for room := range bc.unsafe.rooms {
 		delete(bc.unsafe.rooms[room].connections, conn.ID())
 	}
 }
@@ -324,7 +333,6 @@ func (bc *redisBroadcast) SendAll(event string, args ...interface{}) {
 func (bc *redisBroadcast) ForEach(room string, f EachFunc) {
 	bc.unsafe.lock.RLock()
 	defer bc.unsafe.lock.RUnlock()
-	bc.logger.Tracef("ForEach %s", room)
 	desc, ok := bc.unsafe.rooms[room]
 	if !ok {
 		return
@@ -334,13 +342,32 @@ func (bc *redisBroadcast) ForEach(room string, f EachFunc) {
 	}
 }
 
-// ForEach sends data returned by DataFunc
-func (bc *redisBroadcast) JoinRoomsViaCallback(roomToJoin string, f EachConnFunc) error {
+// joinRoomsViaCallback goes through all connections in
+// this instance and adds the ones that pass the callback
+// to the given room e.g. "add all admin users to the admin room"
+func (bc *redisBroadcast) JoinRoomsViaCallback(roomToJoin, identifier string) {
+	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, JoinViaCallbackType, nil, "", roomToJoin, identifier)
+}
+
+func (bc *redisBroadcast) joinRoomsViaCallback(args []any, f EachConnFunc) error {
+	if len(args) != 2 {
+		return errors.New("Expected two arguments in published message of type JoinViaCallbackType")
+	}
+	for _, a := range args {
+		if _, ok := a.(string); !ok {
+			return errors.New("Expected both arguments in published message of type JoinViaCallbackType to be a string")
+		}
+	}
+
+	roomToJoin := args[0].(string)
+	identifier := args[1].(string)
+
 	bc.unsafe.lock.RLock()
-	// copy the map because we cannot edit the originl while locked
 	copied := make(map[string]Conn, len(bc.unsafe.rooms))
 	for roomId, desc := range bc.unsafe.rooms {
 		if roomId == roomToJoin {
+			// No need to check connections that are already
+			// in the target room
 			continue
 		}
 		for connId, conn := range desc.connections {
@@ -349,7 +376,7 @@ func (bc *redisBroadcast) JoinRoomsViaCallback(roomToJoin string, f EachConnFunc
 			if _, ok := copied[connId]; ok {
 				continue
 			}
-			ok, err := f(conn.Context())
+			ok, err := f(conn.Context(), JoinRoomsViaCallbackEvent, identifier)
 			if err != nil {
 				bc.unsafe.lock.RUnlock()
 				return err
@@ -439,9 +466,11 @@ func subscribe(client *redis.Client, channel string) (<-chan *redis.Message, err
 
 // publish is the way we talk with other instances of this application.
 func (bc *redisBroadcast) publish(client *string, id, channel string, typ messageType, rooms []metadata, event string, args ...any) {
+	// Build a message to publish on the redis channel
+	// in order to communicate with all instances
 	m := message{
 		InstanceId: id,
-		ClientId:   client, // only happens when a client joins
+		ClientId:   client, // only populated when a client joins
 		Type:       typ,
 		Event:      event,
 		Content:    args,
@@ -478,25 +507,22 @@ func (bc *redisBroadcast) listen(channel string) error {
 	bc.logger.Debugf("Subscribed to channel %s", channel)
 
 	go func() {
-		for {
-			select {
-			case in := <-incoming:
-				if in == nil {
-					bc.logger.Trace("INCOMING nil: closing")
-					break
-				}
-				var m message
-				err := json.Unmarshal([]byte(in.Payload), &m)
-				if err != nil {
-					bc.logger.WithFields(logrus.Fields{
-						"channel": channel,
-						"error":   err,
-						"message": in.Payload,
-					}).Error("Channel sent an invalid message format, dropping message...")
-					continue
-				}
-				bc.handleMessage(&m)
+		for in := range incoming {
+			if in == nil {
+				bc.logger.Info("Channel sent a nil message, dropping message...")
+				continue
 			}
+			var m message
+			err := json.Unmarshal([]byte(in.Payload), &m)
+			if err != nil {
+				bc.logger.WithFields(logrus.Fields{
+					"channel": channel,
+					"error":   err,
+					"message": in.Payload,
+				}).Error("Channel sent an invalid message format, dropping message...")
+				continue
+			}
+			bc.handleMessage(&m)
 		}
 		bc.logger.Trace("Shutting down go routine listening")
 	}()
@@ -508,7 +534,8 @@ func (bc *redisBroadcast) listen(channel string) error {
 // keep our own state updated.
 func (bc *redisBroadcast) handleMessage(m *message) {
 	bc.unsafe.lock.Lock()
-	defer bc.unsafe.lock.Unlock()
+
+	bc.logger.Debugf("Instance=(%s) received message of type=(%s) from instance=(%s)\n", bc.unsafe.instanceId, m.Type, m.InstanceId)
 
 	// Each message contains metadata about the rooms
 	// the message applies to, make use of it
@@ -539,6 +566,8 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 				conn.Emit(m.Event, m.Content...)
 			}
 		}
+		bc.unsafe.lock.Unlock()
+		return
 	// Clear the entire room
 	case ClearType:
 		for _, meta := range m.Rooms {
@@ -547,5 +576,16 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 			}
 			delete(bc.unsafe.rooms, meta.Name)
 		}
+		bc.unsafe.lock.Unlock()
+		return
+	// Run the callback logic
+	case JoinViaCallbackType:
+		bc.unsafe.lock.Unlock() // joinRoomsViaCallback will manage locking from here
+		err := bc.joinRoomsViaCallback(m.Content, bc.callback)
+		if err != nil {
+			bc.logger.Error(err)
+		}
+		return
 	}
+	bc.unsafe.lock.Unlock()
 }

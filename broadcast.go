@@ -2,23 +2,35 @@ package socketio
 
 import "sync"
 
+// The callback event is passed to the
+// generic callback function so that
+// the application using this lib knows
+// what business logic to run
+type CallbackEvent int
+
+const (
+	// Callback function returns true for
+	// any connection that should join the given room
+	JoinRoomsViaCallbackEvent CallbackEvent = iota
+)
+
 // EachFunc typed for each callback function
 type EachFunc func(Conn)
-type EachConnFunc func(interface{}) (bool, error)
+type EachConnFunc func(context interface{}, event CallbackEvent, args ...any) (bool, error)
 
 // Broadcast is the adaptor to handle broadcasts & rooms for socket.io server API
 type Broadcast interface {
-	Join(room string, connection Conn)                            // Join causes the connection to join a room
-	Leave(room string, connection Conn)                           // Leave causes the connection to leave a room
-	LeaveAll(connection Conn)                                     // LeaveAll causes given connection to leave all rooms
-	Clear(room string)                                            // Clear causes removal of all connections from the room
-	Send(room, event string, args ...interface{})                 // Send will send an event with args to the room
-	SendAll(event string, args ...interface{})                    // SendAll will send an event with args to all the rooms
-	ForEach(room string, f EachFunc)                              // ForEach sends data by DataFunc, if room does not exits sends nothing
-	JoinRoomsViaCallback(roomToJoin string, f EachConnFunc) error // ForEach sends data by DataFunc
-	Len(room string) int                                          // Len gives number of connections in the room
-	Rooms(connection Conn) []string                               // Rooms gives list of all the rooms if no connection given, else list of all the rooms the connection joined
-	AllRooms() []string                                           // AllRooms gives list of all the rooms the connection joined
+	Join(room string, connection Conn)                  // Join causes the connection to join a room
+	Leave(room string, connection Conn)                 // Leave causes the connection to leave a room
+	LeaveAll(connection Conn)                           // LeaveAll causes given connection to leave all rooms
+	Clear(room string)                                  // Clear causes removal of all connections from the room
+	Send(room, event string, args ...interface{})       // Send will send an event with args to the room
+	SendAll(event string, args ...interface{})          // SendAll will send an event with args to all the rooms
+	ForEach(room string, f EachFunc)                    // ForEach sends data by DataFunc, if room does not exits sends nothing
+	JoinRoomsViaCallback(roomToJoin, identifier string) // JoinRoomsViaCallback triggers the entire cluster to join rooms based on set callbac
+	Len(room string) int                                // Len gives number of connections in the room
+	Rooms(connection Conn) []string                     // Rooms gives list of all the rooms if no connection given, else list of all the rooms the connection joined
+	AllRooms() []string                                 // AllRooms gives list of all the rooms the connection joined
 }
 
 // broadcast gives Join, Leave & BroadcastTO server API support to socket.io along with room management
@@ -122,9 +134,7 @@ func (bc *broadcast) ForEach(room string, f EachFunc) {
 }
 
 // ForEach sends data returned by DataFunc, if room does not exits sends nothing
-func (bc *broadcast) JoinRoomsViaCallback(roomToJoin string, f EachConnFunc) error {
-	return nil
-}
+func (bc *broadcast) JoinRoomsViaCallback(roomToJoin, identifier string) {}
 
 // Len gives number of connections in the room
 func (bc *broadcast) Len(room string) int {
