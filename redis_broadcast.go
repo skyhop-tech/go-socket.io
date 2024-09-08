@@ -44,7 +44,13 @@ type RedisAdapterOptions struct {
 	Network  string
 	Password string
 	Logger   *logrus.Logger
-	Callback EachConnFunc
+	// The callback function used when calling
+	// join rooms via callback. This allows us
+	// to run business logic on each instance
+	// in the cluster that decides whether or not
+	// a connections on that instance should join
+	// the given room.
+	JoinViaCallbackFunc JoinViaCallbackFunc
 }
 
 type redisBroadcast struct {
@@ -57,7 +63,7 @@ type redisBroadcast struct {
 	// A callback is registered to the broadcast
 	// to run any app business logic needed across
 	// all instances.
-	callback EachConnFunc
+	joinViaCallbackFunc JoinViaCallbackFunc
 
 	// Any thread unsafe values should be keept
 	// in here
@@ -179,9 +185,9 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 
 	id := newV4UUID()
 	rbc := &redisBroadcast{
-		client:   client,
-		logger:   opts.Logger,
-		callback: opts.Callback,
+		client:              client,
+		logger:              opts.Logger,
+		joinViaCallbackFunc: opts.JoinViaCallbackFunc,
 		unsafe: unsafe{
 			instanceId: id,
 			prefix:     opts.Prefix,
@@ -342,14 +348,14 @@ func (bc *redisBroadcast) ForEach(room string, f EachFunc) {
 	}
 }
 
-// joinRoomsViaCallback goes through all connections in
-// this instance and adds the ones that pass the callback
-// to the given room e.g. "add all admin users to the admin room"
-func (bc *redisBroadcast) JoinRoomsViaCallback(roomToJoin, identifier string) {
+func (bc *redisBroadcast) JoinViaCallback(roomToJoin, identifier string) {
 	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, JoinViaCallbackType, nil, "", roomToJoin, identifier)
 }
 
-func (bc *redisBroadcast) joinRoomsViaCallback(args []any, f EachConnFunc) error {
+// joinViaCallback goes through all connections in
+// this instance and adds the ones that pass the callback
+// to the given room e.g. "add all admin users to the admin room"
+func (bc *redisBroadcast) joinViaCallback(args []any) error {
 	if len(args) != 2 {
 		return errors.New("Expected two arguments in published message of type JoinViaCallbackType")
 	}
@@ -376,7 +382,7 @@ func (bc *redisBroadcast) joinRoomsViaCallback(args []any, f EachConnFunc) error
 			if _, ok := copied[connId]; ok {
 				continue
 			}
-			ok, err := f(conn.Context(), JoinRoomsViaCallbackEvent, identifier)
+			ok, err := bc.joinViaCallbackFunc(conn.Context(), roomToJoin, identifier)
 			if err != nil {
 				bc.unsafe.lock.RUnlock()
 				return err
@@ -580,8 +586,8 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 		return
 	// Run the callback logic
 	case JoinViaCallbackType:
-		bc.unsafe.lock.Unlock() // joinRoomsViaCallback will manage locking from here
-		err := bc.joinRoomsViaCallback(m.Content, bc.callback)
+		bc.unsafe.lock.Unlock() // joinViaCallback will manage locking from here
+		err := bc.joinViaCallback(m.Content)
 		if err != nil {
 			bc.logger.Error(err)
 		}
