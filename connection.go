@@ -65,6 +65,8 @@ func (c *conn) Close() error {
 
 			if nh, _ := c.handlers.Get(ns); nh != nil && nh.onDisconnect != nil {
 				nh.onDisconnect(nc, clientDisconnectMsg)
+				// remove the room for this connection
+				nh.broadcast.Clear(nc.ID())
 			}
 		})
 		err = c.Conn.Close()
