@@ -1,8 +1,9 @@
 package socketio
 
 import (
-	"github.com/skyhop-tech/go-socket.io/parser"
 	"reflect"
+
+	"github.com/skyhop-tech/go-socket.io/parser"
 )
 
 // namespace
