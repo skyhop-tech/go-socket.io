@@ -51,12 +51,23 @@ type RedisAdapterOptions struct {
 	// a connections on that instance should join
 	// the given room.
 	JoinViaCallbackFunc JoinViaCallbackFunc
+
+	// redis streaming config
+	UseStreaming      bool
+	ReadAllMessages   bool
+	StreamMaxLength   int64
+	ConsumerBatchSize int64
 }
 
 type redisBroadcast struct {
 	// We maintain a single connection to redis
 	// for this namespace.
 	client *redis.Client
+
+	UseStreaming      bool
+	ReadAllMessages   bool
+	StreamMaxLength   int64
+	ConsumerBatchSize int64
 
 	logger *logrus.Logger
 
@@ -188,6 +199,10 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 		client:              client,
 		logger:              opts.Logger,
 		joinViaCallbackFunc: opts.JoinViaCallbackFunc,
+		UseStreaming:        opts.UseStreaming,
+		ReadAllMessages:     opts.ReadAllMessages,
+		StreamMaxLength:     opts.StreamMaxLength,
+		ConsumerBatchSize:   opts.ConsumerBatchSize,
 		unsafe: unsafe{
 			instanceId: id,
 			prefix:     opts.Prefix,
@@ -200,9 +215,16 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 	// between instances of this application. Once a message is received
 	// on this channel it is propagated to all clients connected to this
 	// application instance.
-	lErr := rbc.listen(channel)
-	if lErr != nil {
-		return nil, errors.Wrap(lErr, "listen")
+	if opts.UseStreaming {
+		lErr := rbc.listenToStream(channel)
+		if lErr != nil {
+			return nil, errors.Wrap(lErr, "listenToStream")
+		}
+	} else {
+		lErr := rbc.listen(channel)
+		if lErr != nil {
+			return nil, errors.Wrap(lErr, "listen")
+		}
 	}
 
 	return rbc, nil
@@ -213,20 +235,20 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 // and send chat messages to them.
 func (bc *redisBroadcast) AllRooms() []string {
 	bc.unsafe.lock.RLock()
-	bc.logger.Debugf("%s locked: AllRooms", bc.unsafe.instanceId)
+
 	defer bc.unsafe.lock.RUnlock()
 	var rooms []string
 	for _, desc := range bc.unsafe.rooms {
 		rooms = append(rooms, desc.name)
 	}
-	bc.logger.Debugf("%s unlocked: AllRooms", bc.unsafe.instanceId)
+
 	return rooms
 }
 
 // Join joins the given connection to the redisBroadcast room.
 func (bc *redisBroadcast) Join(room string, conn Conn) {
 	bc.unsafe.lock.Lock()
-	bc.logger.Debugf("%s locked: Join", bc.unsafe.instanceId)
+
 	defer bc.unsafe.lock.Unlock()
 
 	if _, ok := bc.unsafe.rooms[room]; !ok {
@@ -249,20 +271,17 @@ func (bc *redisBroadcast) Join(room string, conn Conn) {
 
 	// Let all instances know that a client joined this room.
 	bc.publish(&client, bc.unsafe.instanceId, bc.unsafe.channel, JoinType, rooms, "")
-	bc.logger.Debugf("%s unlocked: Join", bc.unsafe.instanceId)
 }
 
 // Leave removes the given connection from the given room
 func (bc *redisBroadcast) Leave(room string, conn Conn) {
 	bc.unsafe.lock.Lock()
-	bc.logger.Debugf("%s locked: Leave", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.Unlock()
 
 	if _, ok := bc.unsafe.rooms[room]; ok {
 		// fmt.Println(conn.ID(), "left room:", room)
 		delete(bc.unsafe.rooms[room].connections, conn.ID())
 	}
-	bc.logger.Debugf("%s unlocked: Leave", bc.unsafe.instanceId)
 }
 
 // LeaveAll leaves the given connection from all rooms.
@@ -270,19 +289,16 @@ func (bc *redisBroadcast) Leave(room string, conn Conn) {
 // A browser refresh may trigger this as well
 func (bc *redisBroadcast) LeaveAll(conn Conn) {
 	bc.unsafe.lock.Lock()
-	bc.logger.Debugf("%s locked: LeaveAll", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.Unlock()
 
 	for room := range bc.unsafe.rooms {
 		delete(bc.unsafe.rooms[room].connections, conn.ID())
 	}
-	bc.logger.Debugf("%s unlocked: LeaveAll", bc.unsafe.instanceId)
 }
 
 // Clear clears the room.
 func (bc *redisBroadcast) Clear(room string) {
 	bc.unsafe.lock.Lock()
-	bc.logger.Debugf("%s locked: Clear", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.Unlock()
 
 	delete(bc.unsafe.rooms, room)
@@ -297,18 +313,16 @@ func (bc *redisBroadcast) Clear(room string) {
 	}
 
 	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ClearType, rooms, "")
-	bc.logger.Debugf("%s unlocked: Clear", bc.unsafe.instanceId)
 }
 
 // Send sends given event & args to all the connections in the specified room.
 func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 	bc.unsafe.lock.RLock()
-	bc.logger.Debugf("%s locked: Send", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.RUnlock()
 
 	if _, ok := bc.unsafe.rooms[room]; !ok {
 		bc.logger.Debugf("Tried to send to room=%s that doesnt exist", room)
-		bc.logger.Debugf("%s unlocked: Send", bc.unsafe.instanceId)
+
 		return
 	}
 
@@ -322,13 +336,11 @@ func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 	}
 
 	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args...)
-	bc.logger.Debugf("%s unlocked: Send", bc.unsafe.instanceId)
 }
 
 // SendAll sends given event & args to all the connections to all the rooms.
 func (bc *redisBroadcast) SendAll(event string, args ...interface{}) {
 	bc.unsafe.lock.RLock()
-	bc.logger.Debugf("%s locked: SendAll", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.RUnlock()
 
 	for _, desc := range bc.unsafe.rooms {
@@ -348,23 +360,19 @@ func (bc *redisBroadcast) SendAll(event string, args ...interface{}) {
 	}
 
 	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args...)
-	bc.logger.Debugf("%s unlocked: SendAll", bc.unsafe.instanceId)
 }
 
 // ForEach sends data returned by DataFunc, if room does not exits sends nothing.
 func (bc *redisBroadcast) ForEach(room string, f EachFunc) {
 	bc.unsafe.lock.RLock()
-	bc.logger.Debugf("%s locked: ForEach", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.RUnlock()
 	desc, ok := bc.unsafe.rooms[room]
 	if !ok {
-		bc.logger.Debugf("%s unlocked: ForEach", bc.unsafe.instanceId)
 		return
 	}
 	for _, conn := range desc.connections {
 		f(conn)
 	}
-	bc.logger.Debugf("%s unlocked: ForEach", bc.unsafe.instanceId)
 }
 
 func (bc *redisBroadcast) JoinViaCallback(roomToJoin, identifier string) {
@@ -388,7 +396,6 @@ func (bc *redisBroadcast) joinViaCallback(args []any) error {
 	identifier := args[1].(string)
 
 	bc.unsafe.lock.RLock()
-	bc.logger.Debugf("%s locked: joinViaCallback", bc.unsafe.instanceId)
 	copied := make(map[string]Conn, len(bc.unsafe.rooms))
 	for roomId, desc := range bc.unsafe.rooms {
 		if roomId == roomToJoin {
@@ -404,7 +411,7 @@ func (bc *redisBroadcast) joinViaCallback(args []any) error {
 			}
 			ok, err := bc.joinViaCallbackFunc(conn.Context(), roomToJoin, identifier)
 			if err != nil {
-				bc.logger.Debugf("%s unlocked: joinViaCallback", bc.unsafe.instanceId)
+
 				bc.unsafe.lock.RUnlock()
 				return err
 			}
@@ -413,7 +420,6 @@ func (bc *redisBroadcast) joinViaCallback(args []any) error {
 			}
 		}
 	}
-	bc.logger.Debugf("%s unlocked: joinViaCallback", bc.unsafe.instanceId)
 	bc.unsafe.lock.RUnlock()
 
 	for _, currentConnection := range copied {
@@ -426,7 +432,6 @@ func (bc *redisBroadcast) joinViaCallback(args []any) error {
 // Len gives number of connections in the room.
 func (bc *redisBroadcast) Len(room string) int {
 	bc.unsafe.lock.RLock()
-	bc.logger.Debugf("%s locked: Len", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.RUnlock()
 
 	if _, ok := bc.unsafe.rooms[room]; !ok {
@@ -441,7 +446,6 @@ func (bc *redisBroadcast) Len(room string) int {
 		count += c
 	}
 	bc.logger.Tracef("Total Len %d", count)
-	bc.logger.Debugf("%s unlocked: Len", bc.unsafe.instanceId)
 	return count
 }
 
@@ -455,7 +459,6 @@ func (bc *redisBroadcast) Rooms(conn Conn) []string {
 	}
 
 	bc.unsafe.lock.RLock()
-	bc.logger.Debugf("%s locked: Rooms", bc.unsafe.instanceId)
 	defer bc.unsafe.lock.RUnlock()
 
 	var rooms []string
@@ -465,7 +468,6 @@ func (bc *redisBroadcast) Rooms(conn Conn) []string {
 		}
 	}
 
-	bc.logger.Debugf("%s unlocked: Rooms", bc.unsafe.instanceId)
 	return rooms
 }
 
@@ -518,13 +520,30 @@ func (bc *redisBroadcast) publish(client *string, id, channel string, typ messag
 		return
 	}
 
-	pErr := bc.client.Publish(channel, payload).Err()
-	if pErr != nil {
-		bc.logger.WithFields(logrus.Fields{
-			"error":   pErr,
-			"message": m,
-		}).Error("SendAll() Failed to publish message. Dropping")
-		return
+	if bc.UseStreaming {
+		message := map[string]interface{}{
+			"message": payload,
+		}
+
+		_, err = bc.client.XAdd(&redis.XAddArgs{
+			Stream: channel,
+			MaxLen: bc.StreamMaxLength,
+			Values: message,
+		}).Result()
+		if err != nil {
+			bc.logger.WithFields(logrus.Fields{
+				"error":   err,
+				"message": m,
+			}).Error("publish message failed, dropping message")
+		}
+	} else {
+		pErr := bc.client.Publish(channel, payload).Err()
+		if pErr != nil {
+			bc.logger.WithFields(logrus.Fields{
+				"error":   pErr,
+				"message": m,
+			}).Error("publish message failed, dropping message")
+		}
 	}
 }
 
@@ -566,9 +585,8 @@ func (bc *redisBroadcast) listen(channel string) error {
 // keep our own state updated.
 func (bc *redisBroadcast) handleMessage(m *message) {
 	bc.unsafe.lock.Lock()
-	bc.logger.Debugf("%s locked: handleMessage", bc.unsafe.instanceId)
 
-	bc.logger.Debugf("Instance=(%s) received message of type=(%s) from instance=(%s)\n", bc.unsafe.instanceId, m.Type, m.InstanceId)
+	bc.logger.Tracef("Instance=(%s) received message of type=(%s) from instance=(%s)\n", bc.unsafe.instanceId, m.Type, m.InstanceId)
 
 	// Each message contains metadata about the rooms
 	// the message applies to, make use of it
@@ -599,7 +617,6 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 				conn.Emit(m.Event, m.Content...)
 			}
 		}
-		bc.logger.Debugf("%s unlocked: handleMessage", bc.unsafe.instanceId)
 		bc.unsafe.lock.Unlock()
 		return
 	// Clear the entire room
@@ -610,12 +627,10 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 			}
 			delete(bc.unsafe.rooms, meta.Name)
 		}
-		bc.logger.Debugf("%s unlocked: handleMessage", bc.unsafe.instanceId)
 		bc.unsafe.lock.Unlock()
 		return
 	// Run the callback logic
 	case JoinViaCallbackType:
-		bc.logger.Debugf("%s unlocked: handleMessage", bc.unsafe.instanceId)
 		bc.unsafe.lock.Unlock() // joinViaCallback will manage locking from here
 		err := bc.joinViaCallback(m.Content)
 		if err != nil {
@@ -623,6 +638,103 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 		}
 		return
 	}
-	bc.logger.Debugf("%s unlocked: handleMessage", bc.unsafe.instanceId)
 	bc.unsafe.lock.Unlock()
+}
+
+// Listen on a goroutine for incoming messages & decode
+// each message.
+func (bc *redisBroadcast) listenToStream(channel string) error {
+	incoming, errors := bc.ConsumeFromStream(bc.client, channel)
+
+	bc.logger.Debugf("Subscribed to stream %s", channel)
+
+	go func() {
+		// for in := range incoming {
+		for {
+			select {
+			case err := <-errors:
+				if err == nil {
+					bc.logger.Info("errors channel sent a nil message, dropping message...")
+					break
+				}
+				bc.logger.WithError(err).Errorf("consumed error")
+			case in := <-incoming:
+				if in == nil {
+					bc.logger.Info("Channel sent a nil message, dropping message...")
+					continue
+				}
+
+				payload, ok := (in).(string)
+				if !ok {
+					bc.logger.WithFields(logrus.Fields{
+						"channel": channel,
+						"message": in,
+					}).Error("consumed message is not a string, dropping message...")
+					continue
+				}
+
+				var m message
+				err := json.Unmarshal([]byte(payload), &m)
+				if err != nil {
+					bc.logger.WithFields(logrus.Fields{
+						"channel": channel,
+						"error":   err,
+						"message": payload,
+					}).Error("Channel sent an invalid message format, dropping message...")
+					continue
+				}
+
+				bc.handleMessage(&m)
+			}
+		}
+		bc.logger.Trace("Shutting down go routine listening")
+	}()
+
+	return nil
+}
+
+func (bc *redisBroadcast) ConsumeFromStream(client *redis.Client, stream string) (chan interface{}, chan error) {
+	out := make(chan interface{})
+	errors := make(chan error)
+
+	trim := "$"
+	if bc.ReadAllMessages {
+		trim = "0"
+	}
+
+	go func() {
+		for {
+			messages, err := client.XRead(&redis.XReadArgs{
+				Streams: []string{stream, trim},
+				Count:   bc.ConsumerBatchSize, // Read up to 5 messages at a time
+				Block:   0,                    // Wait indefinitely for new messages
+			}).Result()
+
+			if err == redis.Nil {
+				continue
+			} else if err != nil {
+				errors <- err
+				continue
+			}
+
+			for _, stream := range messages {
+				for _, msg := range stream.Messages {
+					if msg.Values == nil {
+						errors <- fmt.Errorf("received message=%s with no values", msg.ID)
+						continue
+					}
+
+					p, ok := msg.Values["message"]
+					if !ok {
+						errors <- fmt.Errorf("received message=%s with invalid message protocol: %+v", msg.ID, msg.Values)
+						continue
+					}
+
+					out <- p
+				}
+			}
+		}
+	}()
+
+	return out, errors
 }
