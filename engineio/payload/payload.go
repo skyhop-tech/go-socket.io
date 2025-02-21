@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio/frame"
 	"github.com/skyhop-tech/go-socket.io/engineio/packet"
 )
@@ -141,7 +142,10 @@ func (p *Payload) FlushOut(w io.Writer) error {
 
 	if ok := p.pauser.Working(); !ok {
 		_, err := w.Write(p.encoder.NOOP())
-		return err
+		if err != nil {
+			return errors.Wrap(err, "w.Write")
+		}
+		return nil
 	}
 	defer p.pauser.Done()
 
@@ -159,7 +163,10 @@ func (p *Payload) FlushOut(w io.Writer) error {
 
 		case <-p.pauser.PausingTrigger():
 			_, err := w.Write(p.encoder.NOOP())
-			return err
+			if err != nil {
+				return errors.Wrap(err, "w.Write")
+			}
+			return nil
 
 		case p.writerChan <- w:
 		}
@@ -254,7 +261,7 @@ func (p *Payload) Store(op string, err error) error {
 	old := p.err.Load()
 	if old == nil {
 		if err == io.EOF || err == nil {
-			return err
+			return nil
 		}
 		op := newOpError(op, err)
 		p.err.Store(op)

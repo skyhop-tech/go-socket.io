@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio"
 	"github.com/skyhop-tech/go-socket.io/parser"
 )
@@ -73,8 +74,11 @@ func (c *conn) Close() error {
 
 		close(c.quitChan)
 	})
+	if err != nil {
+		return errors.Wrap(err, "conn.Close: error while closing the connection")
+	}
 
-	return err
+	return nil
 }
 
 func (c *conn) connect() error {
@@ -97,13 +101,15 @@ func (c *conn) connect() error {
 	}
 
 	if err := c.encoder.Encode(header); err != nil {
-		return err
+		return errors.Wrap(err, "connect: c.encoderEncode")
 	}
 
 	handler, ok := c.handlers.Get(header.Namespace)
 	if ok {
 		_, err := handler.dispatch(root, header)
-		return err
+		if err != nil {
+			return errors.Wrap(err, "connect: handler.dispatch")
+		}
 	}
 
 	return nil

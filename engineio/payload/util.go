@@ -1,14 +1,18 @@
 package payload
 
-import "bytes"
+import (
+	"bytes"
+
+	"github.com/pkg/errors"
+)
 
 func writeBinaryLen(l int64, w *bytes.Buffer) error {
 	if l <= 0 {
 		if err := w.WriteByte(0x00); err != nil {
-			return err
+			return errors.Wrap(err, "w.WriteByte(0x00)")
 		}
 		if err := w.WriteByte(0xff); err != nil {
-			return err
+			return errors.Wrap(err, "w.WriteByte(0xff)")
 		}
 		return nil
 	}
@@ -19,7 +23,7 @@ func writeBinaryLen(l int64, w *bytes.Buffer) error {
 	for max > 0 {
 		n := l / max
 		if err := w.WriteByte(byte(n)); err != nil {
-			return err
+			return errors.Wrap(err, "w.WriteByte(n)")
 		}
 		l -= n * max
 		max /= 10
@@ -30,10 +34,10 @@ func writeBinaryLen(l int64, w *bytes.Buffer) error {
 func writeTextLen(l int64, w *bytes.Buffer) error {
 	if l <= 0 {
 		if err := w.WriteByte('0'); err != nil {
-			return err
+			return errors.Wrap(err, "w.WriteByte(0)")
 		}
 		if err := w.WriteByte(':'); err != nil {
-			return err
+			return errors.Wrap(err, "w.WriteByte(:)")
 		}
 		return nil
 	}
@@ -44,7 +48,7 @@ func writeTextLen(l int64, w *bytes.Buffer) error {
 	for max > 0 {
 		n := l / max
 		if err := w.WriteByte(byte(n) + '0'); err != nil {
-			return err
+			return errors.Wrap(err, "w.WriteByte(n + 0)")
 		}
 		l -= n * max
 		max /= 10
@@ -57,7 +61,7 @@ func readBinaryLen(r byteReader) (int64, error) {
 	for {
 		b, err := r.ReadByte()
 		if err != nil {
-			return 0, err
+			return 0, errors.Wrap(err, "r.ReadByte")
 		}
 		if b == 0xff {
 			break
@@ -75,7 +79,7 @@ func readTextLen(r byteReader) (int64, error) {
 	for {
 		b, err := r.ReadByte()
 		if err != nil {
-			return 0, err
+			return 0, errors.Wrap(err, "r.ReadByte")
 		}
 		if b == ':' {
 			break

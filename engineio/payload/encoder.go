@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"io"
 
+	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio/frame"
 	"github.com/skyhop-tech/go-socket.io/engineio/packet"
 )
@@ -36,7 +37,7 @@ func (e *encoder) NOOP() []byte {
 func (e *encoder) NextWriter(ft frame.Type, pt packet.Type) (io.WriteCloser, error) {
 	w, err := e.feeder.getWriter()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "encoder.NextWriter: e.feeder.getWriter")
 	}
 	e.rawWriter = w
 
@@ -86,28 +87,44 @@ func (e *encoder) Close() error {
 	if werr := e.feeder.putWriter(err); werr != nil {
 		return werr
 	}
-	return err
+	if err != nil {
+		return errors.Wrap(err, "Close: writeHeader")
+	}
+
+	return nil
 }
 
 func (e *encoder) writeTextHeader() error {
 	l := int64(e.frameCache.Len() + 1) // length for packet type
 	err := writeTextLen(l, &e.header)
-	if err == nil {
-		err = e.header.WriteByte(e.pt.StringByte())
+	if err != nil {
+		return errors.Wrap(err, "writeTextHeader: writeTextLen")
 	}
-	return err
+
+	err = e.header.WriteByte(e.pt.StringByte())
+	if err != nil {
+		return errors.Wrap(err, "e.header.WriteByte")
+	}
+
+	return nil
 }
 
 func (e *encoder) writeB64Header() error {
 	l := int64(e.frameCache.Len() + 2) // length for 'b' and packet type
 	err := writeTextLen(l, &e.header)
-	if err == nil {
-		err = e.header.WriteByte('b')
+	if err != nil {
+		return errors.Wrap(err, "writeB64Header: writeTextLen")
 	}
-	if err == nil {
-		err = e.header.WriteByte(e.pt.StringByte())
+	err = e.header.WriteByte('b')
+	if err != nil {
+		return errors.Wrap(err, "writeB64Header: e.header.WriteByte('b')")
 	}
-	return err
+	err = e.header.WriteByte(e.pt.StringByte())
+	if err != nil {
+		return errors.Wrap(err, "writeB64Header: e.header.WriteByte(e.pt.StringByte())")
+	}
+
+	return nil
 }
 
 func (e *encoder) writeBinaryHeader() error {
@@ -117,11 +134,17 @@ func (e *encoder) writeBinaryHeader() error {
 		b = e.pt.BinaryByte()
 	}
 	err := e.header.WriteByte(e.ft.Byte())
-	if err == nil {
-		err = writeBinaryLen(l, &e.header)
+	if err != nil {
+		return errors.Wrap(err, "writeBinaryHeader: e.header.WriteByte")
 	}
-	if err == nil {
-		err = e.header.WriteByte(b)
+	err = writeBinaryLen(l, &e.header)
+	if err != nil {
+		return errors.Wrap(err, "writeBinaryHeader: writeBinaryLen")
 	}
-	return err
+	err = e.header.WriteByte(b)
+	if err != nil {
+		return errors.Wrap(err, "writeBinaryHeader: e.header.WriteByte")
+	}
+
+	return nil
 }
