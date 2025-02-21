@@ -1,9 +1,10 @@
 package polling
 
 import (
-	"errors"
 	"mime"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 type Addr struct {
@@ -21,7 +22,7 @@ func (a Addr) String() string {
 func mimeIsSupportBinary(m string) (bool, error) {
 	typ, params, err := mime.ParseMediaType(m)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "mimeIsSupportBinary: mime.ParseMediaType")
 	}
 
 	switch typ {
@@ -31,10 +32,10 @@ func mimeIsSupportBinary(m string) (bool, error) {
 	case "text/plain":
 		charset := strings.ToLower(params["charset"])
 		if charset != "utf-8" {
-			return false, errors.New("invalid charset")
+			return false, errors.New("mimeIsSupportBinary: invalid charset")
 		}
 		return false, nil
 	}
 
-	return false, errors.New("invalid content-type")
+	return false, errors.New("mimeIsSupportBinary: invalid content-type")
 }

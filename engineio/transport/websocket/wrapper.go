@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 
 	"github.com/skyhop-tech/go-socket.io/engineio/frame"
 	"github.com/skyhop-tech/go-socket.io/engineio/transport"
@@ -85,8 +86,11 @@ func (r rcWrapper) Close() error {
 
 	// Attempt to drain the Reader.
 	_, err := io.Copy(ioutil.Discard, r)
+	if err != nil {
+		return errors.Wrap(err, "Close: discard")
+	}
 
-	return err
+	return nil
 }
 
 func (w wrapper) NextWriter(FType frame.Type) (io.WriteCloser, error) {
@@ -106,7 +110,7 @@ func (w wrapper) NextWriter(FType frame.Type) (io.WriteCloser, error) {
 	// The wrapper remains locked until the returned WriteCloser is Closed.
 	if err != nil {
 		w.writeLocker.Unlock()
-		return nil, err
+		return nil, errors.Wrap(err, "w.Conn.NextWriter")
 	}
 
 	return newWcWrapper(w.writeLocker, writer), nil

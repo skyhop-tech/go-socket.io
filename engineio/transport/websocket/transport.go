@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 
 	"github.com/skyhop-tech/go-socket.io/engineio/transport"
 	"github.com/skyhop-tech/go-socket.io/engineio/transport/utils"
@@ -87,7 +88,7 @@ func (t *Transport) Accept(w http.ResponseWriter, r *http.Request) (transport.Co
 	}
 	c, err := upgrader.Upgrade(w, r, w.Header())
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "upgrader.Upgrade")
 	}
 
 	return newConn(c, *r.URL, r.Header), nil

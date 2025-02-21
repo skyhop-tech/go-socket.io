@@ -14,7 +14,7 @@ const (
 
 // message
 const (
-	clientDisconnectMsg = "client namespace disconnect"
+	clientDisconnectMsg = "client disconnected"
 )
 
 type readHandler func(c *conn, header parser.Header) error

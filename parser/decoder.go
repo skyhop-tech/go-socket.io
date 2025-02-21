@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"github.com/skyhop-tech/go-socket.io/engineio/session"
 	"io"
 	"io/ioutil"
 	"reflect"
 	"strings"
+
+	"github.com/pkg/errors"
+	"github.com/skyhop-tech/go-socket.io/engineio/session"
 )
 
 const (
@@ -49,8 +51,11 @@ func (d *Decoder) Close() error {
 		err = d.lastFrame.Close()
 		d.lastFrame = nil
 	}
+	if err != nil {
+		return errors.Wrap(err, "decoder.Close")
+	}
 
-	return err
+	return nil
 }
 
 func (d *Decoder) DiscardLast() (err error) {
@@ -58,14 +63,17 @@ func (d *Decoder) DiscardLast() (err error) {
 		err = d.lastFrame.Close()
 		d.lastFrame = nil
 	}
+	if err != nil {
+		return errors.Wrap(err, "decorder.DiscardLast")
+	}
 
-	return err
+	return nil
 }
 
 func (d *Decoder) DecodeHeader(header *Header, event *string) error {
 	ft, r, err := d.r.NextReader()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "d.r.NextReader")
 	}
 
 	if ft != session.TEXT {
@@ -81,7 +89,7 @@ func (d *Decoder) DecodeHeader(header *Header, event *string) error {
 
 	bufferCount, err := d.readHeader(header)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "d.readHeader")
 	}
 
 	d.bufferCount = bufferCount
@@ -92,7 +100,7 @@ func (d *Decoder) DecodeHeader(header *Header, event *string) error {
 	d.isEvent = header.Type == Event
 	if d.isEvent {
 		if err := d.readEvent(event); err != nil {
-			return err
+			return errors.Wrap(err, "d.readEvent")
 		}
 	}
 	return nil
@@ -120,7 +128,7 @@ func (d *Decoder) DecodeArgs(types []reflect.Type) ([]reflect.Value, error) {
 			err = nil
 		}
 		_ = d.DiscardLast()
-		return nil, err
+		return nil, errors.Wrap(err, "DecodeArgs json decode values")
 	}
 
 	//we can't use defer or call DiscardLast before decoding, because
@@ -137,18 +145,18 @@ func (d *Decoder) DecodeArgs(types []reflect.Type) ([]reflect.Value, error) {
 	for i := range buffers {
 		ft, r, err := d.r.NextReader()
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "DecodeArgs d.r.NextReader")
 		}
 
 		buffers[i].Data, err = d.readBuffer(ft, r)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "DecodeArgs d.readBuffer")
 		}
 	}
 
 	for i := range ret {
 		if err := d.detachBuffer(ret[i], buffers); err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "DecodeArgs d.detachBuffer")
 		}
 	}
 	return ret, nil
@@ -203,7 +211,7 @@ func (d *Decoder) readString(r byteReader, until byte) (string, error) {
 func (d *Decoder) readHeader(header *Header) (uint64, error) {
 	typ, err := d.packetReader.ReadByte()
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "readHeader d.packetReader.ReadByte")
 	}
 
 	header.Type = Type(typ - '0')
@@ -217,9 +225,10 @@ func (d *Decoder) readHeader(header *Header) (uint64, error) {
 			err = nil
 		}
 
-		return 0, err
+		return 0, errors.Wrap(err, "d.readUint64FromText")
 	}
 
+	// check header
 	nextByte, err := d.packetReader.ReadByte()
 	if err != nil {
 		header.ID = num
@@ -229,7 +238,7 @@ func (d *Decoder) readHeader(header *Header) (uint64, error) {
 			err = nil
 		}
 
-		return 0, err
+		return 0, errors.Wrap(err, "check header id d.packetReader.ReadByte")
 	}
 
 	// check if buffer count
@@ -248,7 +257,7 @@ func (d *Decoder) readHeader(header *Header) (uint64, error) {
 		if err == io.EOF {
 			err = nil
 		}
-		return bufferCount, err
+		return bufferCount, errors.Wrap(err, "check namespace d.packetReader.ReadByte")
 	}
 
 	if nextByte == '/' {
@@ -258,7 +267,7 @@ func (d *Decoder) readHeader(header *Header) (uint64, error) {
 			if err == io.EOF {
 				err = nil
 			}
-			return bufferCount, err
+			return bufferCount, errors.Wrap(err, "d.readString")
 		}
 
 		queryPos := strings.IndexByte(header.Namespace, '?')
@@ -277,7 +286,7 @@ func (d *Decoder) readHeader(header *Header) (uint64, error) {
 			err = nil
 		}
 
-		return bufferCount, err
+		return bufferCount, errors.Wrap(err, "d.readUint64FromText")
 	}
 
 	if !header.NeedAck {
@@ -286,13 +295,13 @@ func (d *Decoder) readHeader(header *Header) (uint64, error) {
 		header.NeedAck = hasNum
 	}
 
-	return bufferCount, err
+	return bufferCount, nil
 }
 
 func (d *Decoder) readEvent(event *string) error {
 	b, err := d.packetReader.ReadByte()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "d.packetReader.ReadByte")
 	}
 
 	if b != '[' {
@@ -305,7 +314,7 @@ func (d *Decoder) readEvent(event *string) error {
 	for {
 		b, err := d.packetReader.ReadByte()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "d.packetReader.ReadByte")
 		}
 
 		if b == ',' {
@@ -319,7 +328,12 @@ func (d *Decoder) readEvent(event *string) error {
 		buf.WriteByte(b)
 	}
 
-	return json.Unmarshal(buf.Bytes(), event)
+	err = json.Unmarshal(buf.Bytes(), event)
+	if err != nil {
+		return errors.Wrap(err, "json.Unmarshal: event string")
+	}
+
+	return nil
 }
 
 func (d *Decoder) readBuffer(ft session.FrameType, r io.ReadCloser) ([]byte, error) {
@@ -351,21 +365,21 @@ func (d *Decoder) detachBuffer(v reflect.Value, buffers []Buffer) error {
 		}
 		for i := 0; i < v.NumField(); i++ {
 			if err := d.detachBuffer(v.Field(i), buffers); err != nil {
-				return err
+				return errors.Wrap(err, "d.detachBuffer(v.Field(i), buffers)")
 			}
 		}
 
 	case reflect.Map:
 		for _, key := range v.MapKeys() {
 			if err := d.detachBuffer(v.MapIndex(key), buffers); err != nil {
-				return err
+				return errors.Wrap(err, "d.detachBuffer(v.MapIndex(key), buffers)")
 			}
 		}
 
 	case reflect.Array, reflect.Slice:
 		for i := 0; i < v.Len(); i++ {
 			if err := d.detachBuffer(v.Index(i), buffers); err != nil {
-				return err
+				return errors.Wrap(err, "d.detachBuffer(v.Index(i), buffers)")
 			}
 		}
 	}

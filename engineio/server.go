@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 
 	"github.com/skyhop-tech/go-socket.io/engineio/session"
 	"github.com/skyhop-tech/go-socket.io/engineio/transport"
@@ -156,7 +157,7 @@ func (s *Server) newSession(_ context.Context, conn transport.Conn, reqTransport
 	sid := s.sessions.NewID()
 	newSession, err := session.New(conn, sid, reqTransport, params)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "session.New")
 	}
 
 	go func(newSession *session.Session) {

@@ -1,11 +1,11 @@
 package engineio
 
 import (
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
 
+	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio/packet"
 	"github.com/skyhop-tech/go-socket.io/engineio/transport"
 )
@@ -19,7 +19,7 @@ type Dialer struct {
 func (d *Dialer) Dial(urlStr string, requestHeader http.Header) (Conn, error) {
 	u, err := url.Parse(urlStr)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "url.Parse")
 	}
 
 	query := u.Query()
@@ -78,6 +78,9 @@ func (d *Dialer) Dial(urlStr string, requestHeader http.Header) (Conn, error) {
 		go ret.serve()
 
 		return ret, nil
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "Dial")
 	}
 
 	return nil, err
