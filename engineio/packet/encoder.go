@@ -3,7 +3,6 @@ package packet
 import (
 	"io"
 
-	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio/frame"
 )
 
@@ -25,7 +24,7 @@ func NewEncoder(w FrameWriter) *Encoder {
 func (e *Encoder) NextWriter(ft frame.Type, pt Type) (io.WriteCloser, error) {
 	w, err := e.w.NextWriter(ft)
 	if err != nil {
-		return nil, errors.Wrap(err, "encoder.NextWriter")
+		return nil, err
 	}
 
 	var b [1]byte
@@ -37,7 +36,7 @@ func (e *Encoder) NextWriter(ft frame.Type, pt Type) (io.WriteCloser, error) {
 
 	if _, err := w.Write(b[:]); err != nil {
 		w.Close()
-		return nil, errors.Wrap(err, "encoder.NextWriter: w.Write")
+		return nil, err
 	}
 
 	return w, nil

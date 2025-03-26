@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio/payload"
 	"github.com/skyhop-tech/go-socket.io/engineio/transport"
 )
@@ -55,7 +54,7 @@ func dial(client *http.Client, url *url.URL, requestHeader http.Header) (*client
 	}
 	req, err := http.NewRequest("", url.String(), nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "dial: http.NewRequest")
+		return nil, err
 	}
 	for k, v := range requestHeader {
 		req.Header[k] = v

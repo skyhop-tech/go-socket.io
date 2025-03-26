@@ -2,10 +2,10 @@ package socketio
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/parser"
 )
 
@@ -28,7 +28,7 @@ func newNamespaceHandler(ctx context.Context, nsp string, adapterOpts *RedisAdap
 		var err error
 		broadcast, err = newRedisBroadcast(ctx, nsp, adapterOpts)
 		if err != nil {
-			return nil, errors.Wrap(err, "newRedisBroadcast")
+			return nil, err
 		}
 	}
 
