@@ -216,7 +216,12 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 	// on this channel it is propagated to all clients connected to this
 	// application instance.
 	if opts.UseStreaming {
-		lErr := rbc.listenToStream(channel)
+		err := createConsumerGroup(client, channel, id)
+		if err != nil {
+			return nil, err
+		}
+
+		lErr := rbc.listenToStream(channel, id)
 		if lErr != nil {
 			return nil, errors.Wrap(lErr, "listenToStream")
 		}
@@ -643,8 +648,8 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 
 // Listen on a goroutine for incoming messages & decode
 // each message.
-func (bc *redisBroadcast) listenToStream(channel string) error {
-	incoming, errors := bc.ConsumeFromStream(bc.client, channel)
+func (bc *redisBroadcast) listenToStream(channel, instanceId string) error {
+	incoming, errors := bc.ConsumeFromStream(bc.client, instanceId, channel)
 
 	bc.logger.Debugf("Subscribed to stream %s", channel)
 
@@ -693,21 +698,23 @@ func (bc *redisBroadcast) listenToStream(channel string) error {
 	return nil
 }
 
-func (bc *redisBroadcast) ConsumeFromStream(client *redis.Client, stream string) (chan interface{}, chan error) {
+func (bc *redisBroadcast) ConsumeFromStream(client *redis.Client, instanceId, stream string) (chan interface{}, chan error) {
 	out := make(chan interface{})
 	errors := make(chan error)
 
-	trim := "$"
+	trim := ">"
 	if bc.ReadAllMessages {
 		trim = "0"
 	}
 
 	go func() {
 		for {
-			messages, err := client.XRead(&redis.XReadArgs{
-				Streams: []string{stream, trim},
-				Count:   bc.ConsumerBatchSize, // Read up to 5 messages at a time
-				Block:   0,                    // Wait indefinitely for new messages
+			messages, err := client.XReadGroup(&redis.XReadGroupArgs{
+				Group:    instanceId,
+				Consumer: instanceId,
+				Streams:  []string{stream, trim},
+				Count:    1,
+				Block:    5 * time.Second, // wait for new messages
 			}).Result()
 
 			if err == redis.Nil {
@@ -731,10 +738,23 @@ func (bc *redisBroadcast) ConsumeFromStream(client *redis.Client, stream string)
 					}
 
 					out <- p
+
+					err := client.XAck(stream.Stream, stream.Stream, msg.ID).Err()
+					if err != nil {
+						errors <- fmt.Errorf("XAck error:", err)
+					}
 				}
 			}
 		}
 	}()
 
 	return out, errors
+}
+
+func createConsumerGroup(rdb *redis.Client, stream, group string) error {
+	err := rdb.XGroupCreateMkStream(stream, group, "$").Err()
+	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
+		return errors.Wrap(err, "XGroupCreate:")
+	}
+	return nil
 }
