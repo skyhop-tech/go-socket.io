@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"strconv"
-
-	"github.com/pkg/errors"
 )
 
 // Buffer is an binary buffer handler used in emit args. All buffers will be
@@ -27,7 +25,7 @@ type BufferData struct {
 func (a Buffer) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	if err := a.marshalJSONBuf(&buf); err != nil {
-		return nil, errors.Wrap(err, "buffer.MarhalJSON")
+		return nil, err
 	}
 
 	return buf.Bytes(), nil
@@ -67,7 +65,7 @@ func (a *Buffer) encodeBinary(buf *bytes.Buffer) error {
 func (a *Buffer) UnmarshalJSON(b []byte) error {
 	var data BufferData
 	if err := json.Unmarshal(b, &data); err != nil {
-		return errors.Wrap(err, "json.Unmarshal")
+		return err
 	}
 
 	a.isBinary = data.PlaceHolder

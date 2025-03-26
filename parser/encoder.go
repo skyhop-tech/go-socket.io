@@ -3,11 +3,9 @@ package parser
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/skyhop-tech/go-socket.io/engineio/session"
 	"io"
 	"reflect"
-
-	"github.com/pkg/errors"
-	"github.com/skyhop-tech/go-socket.io/engineio/session"
 )
 
 type FrameWriter interface {
@@ -24,32 +22,31 @@ func NewEncoder(w FrameWriter) *Encoder {
 	}
 }
 
-func (e *Encoder) Encode(h Header, args ...interface{}) error {
-	var err error
+func (e *Encoder) Encode(h Header, args ...interface{}) (err error) {
 	var w io.WriteCloser
 	w, err = e.w.NextWriter(session.TEXT)
 	if err != nil {
-		return errors.Wrap(err, "e.w.NextWriter")
+		return
 	}
 
 	var buffers [][]byte
 	buffers, err = e.writePacket(w, h, args)
 	if err != nil {
-		return errors.Wrap(err, "e.writePacket")
+		return
 	}
 
 	for _, b := range buffers {
 		w, err = e.w.NextWriter(session.BINARY)
 		if err != nil {
-			return errors.Wrap(err, "e.w.NextWriter")
+			return
 		}
 
 		err = e.writeBuffer(w, b)
 		if err != nil {
-			return errors.Wrap(err, "e.writeBuffer")
+			return
 		}
 	}
-	return nil
+	return
 }
 
 type byteWriter interface {
@@ -72,7 +69,7 @@ func (e *Encoder) writePacket(w io.WriteCloser, h Header, args []interface{}) ([
 	max := uint64(0)
 	buffers, err := e.attachBuffer(reflect.ValueOf(args), &max)
 	if err != nil {
-		return nil, errors.Wrap(err, "e.attachBuffer")
+		return nil, err
 	}
 
 	if len(buffers) > 0 && (h.Type == Event || h.Type == Ack) {
@@ -80,44 +77,44 @@ func (e *Encoder) writePacket(w io.WriteCloser, h Header, args []interface{}) ([
 	}
 
 	if err := bw.WriteByte(byte(h.Type + '0')); err != nil {
-		return nil, errors.Wrapf(err, "bw.WriteByte type=%v", h.Type)
+		return nil, err
 	}
 
 	if h.Type == binaryAck || h.Type == binaryEvent {
 		if err := e.writeUint64(bw, max); err != nil {
-			return nil, errors.Wrap(err, "e.writeUint64")
+			return nil, err
 		}
 		if err := bw.WriteByte('-'); err != nil {
-			return nil, errors.Wrap(err, "bw.WriteByte binary")
+			return nil, err
 		}
 	}
 
 	if h.Namespace != "" {
 		if _, err := bw.Write([]byte(h.Namespace)); err != nil {
-			return nil, errors.Wrap(err, "bw.Write to namespace")
+			return nil, err
 		}
 		if h.ID != 0 || args != nil {
 			if err := bw.WriteByte(','); err != nil {
-				return nil, errors.Wrap(err, "bw.WriteByte to namespace with args")
+				return nil, err
 			}
 		}
 	}
 
 	if h.NeedAck {
 		if err := e.writeUint64(bw, h.ID); err != nil {
-			return nil, errors.Wrapf(err, "e.writeUint64 id=%d", h.ID)
+			return nil, err
 		}
 	}
 
 	if len(args) > 0 {
 		if err := json.NewEncoder(bw).Encode(args[0]); err != nil {
-			return nil, errors.Wrap(err, "json.NewEncoder args")
+			return nil, err
 		}
 	}
 
 	if f, ok := bw.(flusher); ok {
 		if err := f.Flush(); err != nil {
-			return nil, errors.Wrap(err, "f.Flush")
+			return nil, err
 		}
 	}
 
@@ -132,7 +129,7 @@ func (e *Encoder) writeUint64(w byteWriter, i uint64) error {
 	for base > 0 {
 		p := i / base
 		if err := w.WriteByte(byte(p) + '0'); err != nil {
-			return errors.Wrap(err, "w.WriteByte(byte(p) + '0')")
+			return err
 		}
 		i -= p * base
 		base /= 10
@@ -161,7 +158,7 @@ func (e *Encoder) attachBuffer(v reflect.Value, index *uint64) ([][]byte, error)
 			for i := 0; i < v.NumField(); i++ {
 				b, err := e.attachBuffer(v.Field(i), index)
 				if err != nil {
-					return nil, errors.Wrap(err, "attachBuffer: struct")
+					return nil, err
 				}
 				ret = append(ret, b...)
 			}
@@ -171,7 +168,7 @@ func (e *Encoder) attachBuffer(v reflect.Value, index *uint64) ([][]byte, error)
 		for i := 0; i < v.Len(); i++ {
 			b, err := e.attachBuffer(v.Index(i), index)
 			if err != nil {
-				return nil, errors.Wrap(err, "attachBuffer: slice")
+				return nil, err
 			}
 
 			ret = append(ret, b...)
@@ -181,7 +178,7 @@ func (e *Encoder) attachBuffer(v reflect.Value, index *uint64) ([][]byte, error)
 		for _, key := range v.MapKeys() {
 			b, err := e.attachBuffer(v.MapIndex(key), index)
 			if err != nil {
-				return nil, errors.Wrap(err, "attachBuffer: map")
+				return nil, err
 			}
 
 			ret = append(ret, b...)
@@ -195,8 +192,5 @@ func (e *Encoder) writeBuffer(w io.WriteCloser, buffer []byte) error {
 	defer w.Close()
 
 	_, err := w.Write(buffer)
-	if err != nil {
-		return errors.Wrap(err, "w.Write")
-	}
-	return nil
+	return err
 }

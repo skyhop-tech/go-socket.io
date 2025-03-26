@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio/frame"
 	"github.com/skyhop-tech/go-socket.io/engineio/packet"
 )
@@ -71,11 +70,8 @@ func (d *decoder) Close() error {
 		d.limitReader.N = 0
 		d.b64Reader = nil
 		err = d.sendError(nil)
-		if err != nil {
-			return errors.Wrap(err, "Close")
-		}
 	}
-	return nil
+	return err
 }
 
 func (d *decoder) setNextReader(r byteReader, supportBinary bool) error {
@@ -88,7 +84,7 @@ func (d *decoder) setNextReader(r byteReader, supportBinary bool) error {
 
 	ft, pt, l, err := read(r)
 	if err != nil {
-		return errors.Wrap(err, "setNextReader: read")
+		return err
 	}
 
 	d.ft = ft

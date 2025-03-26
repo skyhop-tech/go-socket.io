@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio/frame"
 	"github.com/skyhop-tech/go-socket.io/engineio/packet"
 	"github.com/skyhop-tech/go-socket.io/engineio/payload"
@@ -46,7 +45,7 @@ func New(conn transport.Conn, sid, transport string, params transport.ConnParame
 
 	if err := ses.setDeadline(); err != nil {
 		ses.Close()
-		return nil, errors.Wrap(err, "New: ses.setDeadline")
+		return nil, err
 	}
 
 	return ses, nil
@@ -96,16 +95,13 @@ func (s *Session) NextReader() (FrameType, io.ReadCloser, error) {
 			err := func() error {
 				w, err := s.nextWriter(ft, packet.PONG)
 				if err != nil {
-					return errors.Wrap(err, "s.nextWriter")
+					return err
 				}
 				// echo
 				_, err = io.Copy(w, r)
 				w.Close() // unlocks the wrapped connection's FrameWriter
 				r.Close() // unlocks the wrapped connection's FrameReader
-				if err != nil {
-					return errors.Wrap(err, "NextReader: PONG: copy to writer")
-				}
-				return nil
+				return err
 			}()
 			if err != nil {
 				s.Close()
@@ -177,18 +173,18 @@ func (s *Session) InitSession() error {
 	w, err := s.nextWriter(frame.String, packet.OPEN)
 	if err != nil {
 		s.Close()
-		return errors.Wrap(err, "s.nextWriter")
+		return err
 	}
 
 	if _, err := s.params.WriteTo(w); err != nil {
 		w.Close()
 		s.Close()
-		return errors.Wrap(err, "s.params.WriteTo")
+		return err
 	}
 
 	if err := w.Close(); err != nil {
 		s.Close()
-		return errors.Wrap(err, "w.Close")
+		return err
 	}
 
 	return nil
@@ -232,7 +228,7 @@ func (s *Session) nextWriter(ft frame.Type, pt packet.Type) (io.WriteCloser, err
 			if op, ok := err.(payload.Error); ok && op.Temporary() {
 				continue
 			}
-			return nil, errors.Wrap(err, "conn.NextWriter")
+			return nil, err
 		}
 		// Caller must Close the WriteCloser to unlock the connection's
 		// FrameWriter when finished writing.
@@ -248,7 +244,7 @@ func (s *Session) setDeadline() error {
 
 	err := s.conn.SetReadDeadline(deadline)
 	if err != nil {
-		return errors.Wrap(err, "s.conn.SetReadDeadline")
+		return err
 	}
 
 	return s.conn.SetWriteDeadline(deadline)

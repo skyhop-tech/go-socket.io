@@ -411,8 +411,9 @@ func (bc *redisBroadcast) joinViaCallback(args []any) error {
 			}
 			ok, err := bc.joinViaCallbackFunc(conn.Context(), roomToJoin, identifier)
 			if err != nil {
+
 				bc.unsafe.lock.RUnlock()
-				return errors.Wrap(err, "bc.joinViaCallbackFunc")
+				return err
 			}
 			if ok {
 				copied[connId] = conn

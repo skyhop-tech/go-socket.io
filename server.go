@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/pkg/errors"
 	"github.com/skyhop-tech/go-socket.io/engineio"
 	"github.com/skyhop-tech/go-socket.io/parser"
 )
@@ -89,7 +88,7 @@ func (s *Server) Serve() error {
 		conn, err := s.engine.Accept()
 		//todo maybe need check EOF from Accept()
 		if err != nil {
-			return errors.Wrap(err, "s.engine.Accept")
+			return err
 		}
 
 		go s.serveConn(conn)

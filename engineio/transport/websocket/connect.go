@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pkg/errors"
 
 	"github.com/skyhop-tech/go-socket.io/engineio/packet"
 	"github.com/skyhop-tech/go-socket.io/engineio/transport"
@@ -68,11 +67,8 @@ func (c *conn) SetWriteDeadline(t time.Time) error {
 	c.ws.writeLocker.Lock()
 	err := c.ws.SetWriteDeadline(t)
 	c.ws.writeLocker.Unlock()
-	if err != nil {
-		return errors.Wrap(err, "c.ws.SetWriteDeadline")
-	}
 
-	return nil
+	return err
 }
 
 func (c *conn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
