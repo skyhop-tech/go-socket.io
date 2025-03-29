@@ -108,6 +108,10 @@ func (nh *namespaceHandler) dispatchEvent(conn Conn, event string, args ...refle
 	return namespaceHandler.Call(append([]reflect.Value{reflect.ValueOf(conn)}, args...))
 }
 
+func (nh *namespaceHandler) Close() error {
+	return nh.broadcast.Close()
+}
+
 func getDispatchMessage(args ...reflect.Value) string {
 	var msg string
 	if len(args) > 0 {

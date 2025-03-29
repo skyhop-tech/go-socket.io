@@ -76,6 +76,9 @@ type redisBroadcast struct {
 	// all instances.
 	joinViaCallbackFunc JoinViaCallbackFunc
 
+	streamName      string
+	streamGroupName string
+
 	// Any thread unsafe values should be keept
 	// in here
 	unsafe unsafe
@@ -203,6 +206,8 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 		ReadAllMessages:     opts.ReadAllMessages,
 		StreamMaxLength:     opts.StreamMaxLength,
 		ConsumerBatchSize:   opts.ConsumerBatchSize,
+		streamName:          channel,
+		streamGroupName:     id,
 		unsafe: unsafe{
 			instanceId: id,
 			prefix:     opts.Prefix,
@@ -751,10 +756,22 @@ func (bc *redisBroadcast) ConsumeFromStream(client *redis.Client, instanceId, st
 	return out, errors
 }
 
+func (bc *redisBroadcast) Close() error {
+	return destroyGroup(bc.client, bc.streamName, bc.streamGroupName)
+}
+
 func createConsumerGroup(rdb *redis.Client, stream, group string) error {
 	err := rdb.XGroupCreateMkStream(stream, group, "$").Err()
 	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
 		return errors.Wrap(err, "XGroupCreate:")
+	}
+	return nil
+}
+
+func destroyGroup(rdb *redis.Client, stream, group string) error {
+	err := rdb.XGroupDestroy(stream, group).Err()
+	if err != nil {
+		return errors.Wrap(err, "XGroupDestroy")
 	}
 	return nil
 }
