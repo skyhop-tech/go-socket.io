@@ -34,6 +34,9 @@ func (s *Server) Adapter(opts *RedisAdapterOptions) (bool, error) {
 
 // Close closes server.
 func (s *Server) Close() error {
+	for _, v := range s.handlers.handlers {
+		v.Close()
+	}
 	return s.engine.Close()
 }
 

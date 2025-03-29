@@ -19,6 +19,7 @@ type Broadcast interface {
 	Len(room string) int                           // Len gives number of connections in the room
 	Rooms(connection Conn) []string                // Rooms gives list of all the rooms if no connection given, else list of all the rooms the connection joined
 	AllRooms() []string                            // AllRooms gives list of all the rooms the connection joined
+	Close() error
 }
 
 // broadcast gives Join, Leave & BroadcastTO server API support to socket.io along with room management
@@ -169,4 +170,8 @@ func (bc *broadcast) getRoomsByConn(connection Conn) []string {
 	}
 
 	return rooms
+}
+
+func (bc *broadcast) Close() error {
+	return nil
 }
