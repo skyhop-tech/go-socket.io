@@ -19,6 +19,7 @@ type Conn interface {
 
 	// ID returns session id
 	ID() string
+	UUID() string
 	URL() url.URL
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
@@ -29,6 +30,7 @@ type conn struct {
 	engineio.Conn
 
 	id         uint64
+	uuid       string
 	handlers   *namespaceHandlers
 	namespaces *namespaces
 
@@ -45,6 +47,7 @@ type conn struct {
 func newConn(engineConn engineio.Conn, handlers *namespaceHandlers) *conn {
 	return &conn{
 		Conn:       engineConn,
+		uuid:       newV4UUID(),
 		encoder:    parser.NewEncoder(engineConn),
 		decoder:    parser.NewDecoder(engineConn),
 		errorChan:  make(chan error),
@@ -67,6 +70,7 @@ func (c *conn) Close() error {
 				nh.onDisconnect(nc, clientDisconnectMsg)
 				// remove the room for this connection
 				nh.broadcast.Clear(nc.ID())
+				nh.broadcast.Clear(nc.UUID())
 			}
 		})
 		err = c.Conn.Close()
@@ -86,7 +90,7 @@ func (c *conn) connect() error {
 	root := newNamespaceConn(c, aliasRootNamespace, rootHandler.broadcast)
 	c.namespaces.Set(rootNamespace, root)
 
-	root.Join(root.ID())
+	root.Join(root.UUID())
 
 	c.namespaces.Range(func(ns string, nc *namespaceConn) {
 		nc.SetContext(c.Conn.Context())
@@ -149,4 +153,8 @@ func (c *conn) namespace(nsp string) *namespaceHandler {
 
 func (c *conn) parseArgs(types []reflect.Type) ([]reflect.Value, error) {
 	return c.decoder.DecodeArgs(types)
+}
+
+func (c *conn) UUID() string {
+	return c.uuid
 }
