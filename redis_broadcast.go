@@ -53,12 +53,10 @@ type RedisAdapterOptions struct {
 	JoinViaCallbackFunc JoinViaCallbackFunc
 
 	// redis streaming config
-	UseStreaming            bool
-	ReadAllMessages         bool
-	StreamMaxLength         int64
-	ConsumerBatchSize       int64
-	ConsumerThreadCount     int
-	ConsumerBlockTtlSeconds int
+	UseStreaming      bool
+	ReadAllMessages   bool
+	StreamMaxLength   int64
+	ConsumerBatchSize int64
 }
 
 type redisBroadcast struct {
@@ -66,12 +64,10 @@ type redisBroadcast struct {
 	// for this namespace.
 	client *redis.Client
 
-	UseStreaming            bool
-	ReadAllMessages         bool
-	StreamMaxLength         int64
-	ConsumerBatchSize       int64
-	ConsumerThreadCount     int
-	ConsumerBlockTtlSeconds int
+	UseStreaming      bool
+	ReadAllMessages   bool
+	StreamMaxLength   int64
+	ConsumerBatchSize int64
 
 	logger *logrus.Logger
 
@@ -203,17 +199,15 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 
 	id := newV4UUID()
 	rbc := &redisBroadcast{
-		client:                  client,
-		logger:                  opts.Logger,
-		joinViaCallbackFunc:     opts.JoinViaCallbackFunc,
-		UseStreaming:            opts.UseStreaming,
-		ReadAllMessages:         opts.ReadAllMessages,
-		StreamMaxLength:         opts.StreamMaxLength,
-		ConsumerBatchSize:       opts.ConsumerBatchSize,
-		ConsumerThreadCount:     opts.ConsumerThreadCount,
-		ConsumerBlockTtlSeconds: opts.ConsumerBlockTtlSeconds,
-		streamName:              channel,
-		streamGroupName:         id,
+		client:              client,
+		logger:              opts.Logger,
+		joinViaCallbackFunc: opts.JoinViaCallbackFunc,
+		UseStreaming:        opts.UseStreaming,
+		ReadAllMessages:     opts.ReadAllMessages,
+		StreamMaxLength:     opts.StreamMaxLength,
+		ConsumerBatchSize:   opts.ConsumerBatchSize,
+		streamName:          channel,
+		streamGroupName:     id,
 		unsafe: unsafe{
 			instanceId: id,
 			prefix:     opts.Prefix,
@@ -720,55 +714,46 @@ func (bc *redisBroadcast) ConsumeFromStream(client *redis.Client, instanceId, st
 		trim = "0"
 	}
 
-	threadCount := bc.ConsumerThreadCount
-	if threadCount <= 0 {
-		threadCount = 1 // fallback
-	}
+	go func() {
+		for {
+			messages, err := client.XReadGroup(&redis.XReadGroupArgs{
+				Group:    instanceId,
+				Consumer: instanceId,
+				Streams:  []string{stream, trim},
+				Count:    1,
+				Block:    5 * time.Second, // wait for new messages
+			}).Result()
 
-	for i := 0; i < threadCount; i++ {
-		go func(threadId int) {
-			consumerName := fmt.Sprintf("%s-%d", instanceId, threadId)
+			if err == redis.Nil {
+				continue
+			} else if err != nil {
+				errors <- err
+				continue
+			}
 
-			for {
-				messages, err := client.XReadGroup(&redis.XReadGroupArgs{
-					Group:    instanceId,
-					Consumer: consumerName,
-					Streams:  []string{stream, trim},
-					Count:    bc.ConsumerBatchSize,
-					Block:    time.Duration(bc.ConsumerBlockTtlSeconds) * time.Second, // wait for new messages
-				}).Result()
+			for _, stream := range messages {
+				for _, msg := range stream.Messages {
+					if msg.Values == nil {
+						errors <- fmt.Errorf("received message=%s with no values", msg.ID)
+						continue
+					}
 
-				if err == redis.Nil {
-					continue
-				} else if err != nil {
-					errors <- fmt.Errorf("consumer %s read error: %w", consumerName, err)
-					continue
-				}
+					p, ok := msg.Values["message"]
+					if !ok {
+						errors <- fmt.Errorf("received message=%s with invalid message protocol: %+v", msg.ID, msg.Values)
+						continue
+					}
 
-				for _, streamRes := range messages {
-					for _, msg := range streamRes.Messages {
-						if msg.Values == nil {
-							errors <- fmt.Errorf("consumer %s received message=%s with no values", consumerName, msg.ID)
-							continue
-						}
+					out <- p
 
-						p, ok := msg.Values["message"]
-						if !ok {
-							errors <- fmt.Errorf("consumer %s received message=%s with invalid message protocol: %+v", consumerName, msg.ID, msg.Values)
-							continue
-						}
-
-						out <- p
-
-						// Acknowledge
-						if err := client.XAck(streamRes.Stream, instanceId, msg.ID).Err(); err != nil {
-							errors <- fmt.Errorf("consumer %s XAck error: %w", consumerName, err)
-						}
+					err := client.XAck(stream.Stream, stream.Stream, msg.ID).Err()
+					if err != nil {
+						errors <- fmt.Errorf("XAck error:", err)
 					}
 				}
 			}
-		}(i)
-	}
+		}
+	}()
 
 	return out, errors
 }
