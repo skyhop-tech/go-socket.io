@@ -90,7 +90,7 @@ func (c *conn) connect() error {
 	root := newNamespaceConn(c, aliasRootNamespace, rootHandler.broadcast)
 	c.namespaces.Set(rootNamespace, root)
 
-	root.Join(root.UUID())
+	root.Join([]string{root.UUID()})
 
 	c.namespaces.Range(func(ns string, nc *namespaceConn) {
 		nc.SetContext(c.Conn.Context())
