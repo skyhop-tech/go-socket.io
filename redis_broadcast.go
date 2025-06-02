@@ -240,6 +240,20 @@ func newRedisBroadcast(ctx context.Context, nsp string, opts *RedisAdapterOption
 	return rbc, nil
 }
 
+// GetConnectionCount - returns the number of coonnections
+// held by this instance
+func (bc *redisBroadcast) GetConnectionCount() int64 {
+	bc.unsafe.lock.RLock()
+
+	defer bc.unsafe.lock.RUnlock()
+	var count int64
+	for _, desc := range bc.unsafe.rooms {
+		count += int64(len(desc.connections))
+	}
+
+	return count
+}
+
 // AllRooms gives list of all rooms that this instance is currently
 // aware of. Instance become aware of more rooms when clients join
 // and send chat messages to them.
@@ -291,7 +305,6 @@ func (bc *redisBroadcast) Leave(room string, conn Conn) {
 	defer bc.unsafe.lock.Unlock()
 
 	if _, ok := bc.unsafe.rooms[room]; ok {
-		// fmt.Println(conn.ID(), "left room:", room)
 		delete(bc.unsafe.rooms[room].connections, conn.ID())
 	}
 }
@@ -748,7 +761,7 @@ func (bc *redisBroadcast) ConsumeFromStream(client *redis.Client, instanceId, st
 
 					err := client.XAck(stream.Stream, stream.Stream, msg.ID).Err()
 					if err != nil {
-						errors <- fmt.Errorf("XAck error:", err)
+						errors <- fmt.Errorf("XAck error=(%v)", err)
 					}
 				}
 			}
