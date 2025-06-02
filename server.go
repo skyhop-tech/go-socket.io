@@ -45,6 +45,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.engine.ServeHTTP(w, r)
 }
 
+func (s *Server) GetConnectionCount(namespace string) int64 {
+	nspHandler := s.getNamespace(namespace)
+	if nspHandler != nil {
+		return nspHandler.broadcast.GetConnectionCount()
+	}
+	return 0
+}
+
 // OnConnect set a handler function f to handle open event for namespace.
 func (s *Server) OnConnect(ctx context.Context, namespace string, f func(Conn) error) {
 	h := s.getNamespace(namespace)

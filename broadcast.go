@@ -20,6 +20,7 @@ type Broadcast interface {
 	Rooms(connection Conn) []string                // Rooms gives list of all the rooms if no connection given, else list of all the rooms the connection joined
 	AllRooms() []string                            // AllRooms gives list of all the rooms the connection joined
 	Close() error
+	GetConnectionCount() int64 // Returns the number of connections currently held by this instance
 }
 
 // broadcast gives Join, Leave & BroadcastTO server API support to socket.io along with room management
@@ -174,4 +175,8 @@ func (bc *broadcast) getRoomsByConn(connection Conn) []string {
 
 func (bc *broadcast) Close() error {
 	return nil
+}
+
+func (bc *broadcast) GetConnectionCount() int64 {
+	panic("GetConnectionCount not implemented")
 }
