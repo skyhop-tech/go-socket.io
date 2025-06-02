@@ -107,7 +107,7 @@ func (s *Server) Serve() error {
 }
 
 // JoinRoom joins given connection to the room.
-func (s *Server) JoinRooms(namespace string, room []string, connection Conn) bool {
+func (s *Server) JoinRoom(namespace string, room string, connection Conn) bool {
 	nspHandler := s.getNamespace(namespace)
 	if nspHandler != nil {
 		nspHandler.broadcast.Join(room, connection)

@@ -21,7 +21,7 @@ type Namespace interface {
 	Namespace() string
 	Emit(eventName string, v ...interface{})
 
-	Join(rooms []string)
+	Join(room string)
 	Leave(room string)
 	LeaveAll()
 	Rooms() []string
@@ -91,8 +91,8 @@ func (nc *namespaceConn) Emit(eventName string, v ...interface{}) {
 	nc.conn.write(header, args...)
 }
 
-func (nc *namespaceConn) Join(rooms []string) {
-	nc.broadcast.Join(rooms, nc)
+func (nc *namespaceConn) Join(room string) {
+	nc.broadcast.Join(room, nc)
 }
 
 func (nc *namespaceConn) Leave(room string) {
