@@ -73,7 +73,7 @@ func connectPacketHandler(c *conn, header parser.Header) error {
 	if !ok {
 		conn = newNamespaceConn(c, header.Namespace, handler.broadcast)
 		c.namespaces.Set(header.Namespace, conn)
-		conn.Join(c.UUID())
+		conn.Join([]string{c.UUID()})
 	}
 
 	_, err := handler.dispatch(conn, header)
