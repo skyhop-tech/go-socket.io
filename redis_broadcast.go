@@ -270,31 +270,33 @@ func (bc *redisBroadcast) AllRooms() []string {
 }
 
 // Join joins the given connection to the redisBroadcast room.
-func (bc *redisBroadcast) Join(room string, conn Conn) {
+func (bc *redisBroadcast) Join(rooms []string, conn Conn) {
 	bc.unsafe.lock.Lock()
-
 	defer bc.unsafe.lock.Unlock()
 
-	if _, ok := bc.unsafe.rooms[room]; !ok {
-		bc.unsafe.rooms[room] = description{
-			name:            room,
-			connections:     make(map[string]Conn),
-			reportedMembers: make(map[string]int),
-		}
-	}
-
 	client := conn.ID()
-	bc.unsafe.rooms[room].connections[client] = conn
+	roomData := make([]metadata, len(rooms), len(rooms))
+	for _, room := range rooms {
 
-	rooms := []metadata{
-		{
+		// store room if it does not
+		if _, ok := bc.unsafe.rooms[room]; !ok {
+			bc.unsafe.rooms[room] = description{
+				name:            room,
+				connections:     make(map[string]Conn),
+				reportedMembers: make(map[string]int),
+			}
+		}
+
+		bc.unsafe.rooms[room].connections[client] = conn
+
+		roomData = append(roomData, metadata{
 			Name:    room,
 			Members: len(bc.unsafe.rooms[room].connections),
-		},
+		})
 	}
 
 	// Let all instances know that a client joined this room.
-	bc.publish(&client, bc.unsafe.instanceId, bc.unsafe.channel, JoinType, rooms, "")
+	bc.publish(&client, bc.unsafe.instanceId, bc.unsafe.channel, JoinType, roomData, "")
 }
 
 // Leave removes the given connection from the given room
@@ -446,7 +448,7 @@ func (bc *redisBroadcast) joinViaCallback(args []any) error {
 	bc.unsafe.lock.RUnlock()
 
 	for _, currentConnection := range copied {
-		bc.Join(roomToJoin, currentConnection)
+		bc.Join([]string{roomToJoin}, currentConnection)
 	}
 
 	return nil

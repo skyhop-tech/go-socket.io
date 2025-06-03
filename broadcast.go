@@ -8,7 +8,7 @@ type JoinViaCallbackFunc func(context interface{}, roomToJoin, identifier string
 
 // Broadcast is the adaptor to handle broadcasts & rooms for socket.io server API
 type Broadcast interface {
-	Join(room string, connection Conn)             // Join causes the connection to join a room
+	Join(rooms []string, connection Conn)          // Join causes the connection to join a room
 	JoinViaCallback(roomToJoin, identifier string) // JoinViaCallback triggers the entire cluster to join rooms based on set callbac
 	Leave(room string, connection Conn)            // Leave causes the connection to leave a room
 	LeaveAll(connection Conn)                      // LeaveAll causes given connection to leave all rooms
@@ -39,15 +39,17 @@ func newBroadcast() *broadcast {
 }
 
 // Join joins the given connection to the broadcast room
-func (bc *broadcast) Join(room string, connection Conn) {
+func (bc *broadcast) Join(rooms []string, connection Conn) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
-	if _, ok := bc.rooms[room]; !ok {
-		bc.rooms[room] = make(map[string]Conn)
-	}
+	for _, room := range rooms {
+		if _, ok := bc.rooms[room]; !ok {
+			bc.rooms[room] = make(map[string]Conn)
+		}
 
-	bc.rooms[room][connection.ID()] = connection
+		bc.rooms[room][connection.ID()] = connection
+	}
 }
 
 // Leave leaves the given connection from given room (if exist)
