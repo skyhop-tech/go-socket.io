@@ -17,6 +17,8 @@ var (
 	errHandleDispatch = errors.New("handler dispatch error")
 
 	errDecodeArgs = errors.New("decode args error")
+
+	errWriteQueueFull = errors.New("write queue full, client is not reading; disconnecting")
 )
 
 type errorMessage struct {
