@@ -26,6 +26,11 @@ type Conn interface {
 	RemoteHeader() http.Header
 }
 
+// writeQueueSize is the number of outgoing packets buffered per connection.
+// A client that falls this far behind is disconnected so it can't stall
+// broadcasts to everyone else.
+const writeQueueSize = 256
+
 type conn struct {
 	engineio.Conn
 
@@ -51,7 +56,7 @@ func newConn(engineConn engineio.Conn, handlers *namespaceHandlers) *conn {
 		encoder:    parser.NewEncoder(engineConn),
 		decoder:    parser.NewDecoder(engineConn),
 		errorChan:  make(chan error),
-		writeChan:  make(chan parser.Payload),
+		writeChan:  make(chan parser.Payload, writeQueueSize),
 		quitChan:   make(chan struct{}),
 		handlers:   handlers,
 		namespaces: newNamespaces(),
@@ -131,10 +136,24 @@ func (c *conn) write(header parser.Header, args ...reflect.Value) {
 		Data:   data,
 	}
 
+	// Never block: write is called from broadcasts that fan out to many
+	// connections, so one slow client must not hold up the rest.
+	select {
+	case <-c.quitChan:
+		return
+	default:
+	}
+
 	select {
 	case c.writeChan <- pkg:
 	case <-c.quitChan:
-		return
+	default:
+		// Close asynchronously: the caller may hold the broadcast lock,
+		// which Close needs in order to leave rooms.
+		go func() {
+			c.onError(rootNamespace, errWriteQueueFull)
+			_ = c.Close()
+		}()
 	}
 }
 

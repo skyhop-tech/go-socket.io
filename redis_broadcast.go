@@ -278,10 +278,9 @@ func (bc *redisBroadcast) AllRooms() []string {
 // Join joins the given connection to the redisBroadcast room.
 func (bc *redisBroadcast) Join(rooms []string, conn Conn) {
 	bc.unsafe.lock.Lock()
-	defer bc.unsafe.lock.Unlock()
 
 	client := conn.ID()
-	roomData := make([]metadata, len(rooms), len(rooms))
+	roomData := make([]metadata, 0, len(rooms))
 	for _, room := range rooms {
 
 		// store room if it does not
@@ -300,6 +299,8 @@ func (bc *redisBroadcast) Join(rooms []string, conn Conn) {
 			Members: len(bc.unsafe.rooms[room].connections),
 		})
 	}
+
+	bc.unsafe.lock.Unlock()
 
 	// Let all instances know that a client joined this room.
 	bc.publish(&client, bc.unsafe.instanceId, bc.unsafe.channel, JoinType, roomData, "")
@@ -330,9 +331,8 @@ func (bc *redisBroadcast) LeaveAll(conn Conn) {
 // Clear clears the room.
 func (bc *redisBroadcast) Clear(room string) {
 	bc.unsafe.lock.Lock()
-	defer bc.unsafe.lock.Unlock()
-
 	delete(bc.unsafe.rooms, room)
+	bc.unsafe.lock.Unlock()
 
 	// Everytime we publish a message we send what we know
 	// about the rooms we're sending the message to.
@@ -349,9 +349,14 @@ func (bc *redisBroadcast) Clear(room string) {
 // Send sends given event & args to all the connections in the specified room.
 func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 	bc.unsafe.lock.RLock()
-	defer bc.unsafe.lock.RUnlock()
+	desc, ok := bc.unsafe.rooms[room]
+	var members int
+	if ok {
+		members = len(desc.connections)
+	}
+	bc.unsafe.lock.RUnlock()
 
-	if _, ok := bc.unsafe.rooms[room]; !ok {
+	if !ok {
 		bc.logger.Debugf("Tried to send to room=%s that doesnt exist", room)
 
 		return
@@ -362,7 +367,7 @@ func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 	rooms := []metadata{
 		{
 			Name:    room,
-			Members: len(bc.unsafe.rooms[room].connections),
+			Members: members,
 		},
 	}
 
@@ -372,11 +377,10 @@ func (bc *redisBroadcast) Send(room, event string, args ...interface{}) {
 // SendAll sends given event & args to all the connections to all the rooms.
 func (bc *redisBroadcast) SendAll(event string, args ...interface{}) {
 	bc.unsafe.lock.RLock()
-	defer bc.unsafe.lock.RUnlock()
-
+	var conns []Conn
 	for _, desc := range bc.unsafe.rooms {
 		for _, conn := range desc.connections {
-			conn.Emit(event, args...)
+			conns = append(conns, conn)
 		}
 	}
 
@@ -389,21 +393,39 @@ func (bc *redisBroadcast) SendAll(event string, args ...interface{}) {
 			Members: len(desc.connections),
 		})
 	}
+	bc.unsafe.lock.RUnlock()
+
+	for _, conn := range conns {
+		conn.Emit(event, args...)
+	}
 
 	bc.publish(nil, bc.unsafe.instanceId, bc.unsafe.channel, ChatType, rooms, event, args...)
 }
 
 // ForEach sends data returned by DataFunc, if room does not exits sends nothing.
 func (bc *redisBroadcast) ForEach(room string, f EachFunc) {
-	bc.unsafe.lock.RLock()
-	defer bc.unsafe.lock.RUnlock()
-	desc, ok := bc.unsafe.rooms[room]
-	if !ok {
-		return
-	}
-	for _, conn := range desc.connections {
+	for _, conn := range bc.roomConnections(room) {
 		f(conn)
 	}
+}
+
+// roomConnections returns a snapshot of this instance's connections in the
+// room so callers can emit without holding the lock.
+func (bc *redisBroadcast) roomConnections(rooms ...string) []Conn {
+	bc.unsafe.lock.RLock()
+	defer bc.unsafe.lock.RUnlock()
+
+	var conns []Conn
+	for _, room := range rooms {
+		desc, ok := bc.unsafe.rooms[room]
+		if !ok {
+			continue
+		}
+		for _, conn := range desc.connections {
+			conns = append(conns, conn)
+		}
+	}
+	return conns
 }
 
 func (bc *redisBroadcast) JoinViaCallback(roomToJoin, identifier string) {
@@ -640,15 +662,15 @@ func (bc *redisBroadcast) handleMessage(m *message) {
 	// If this is a chat message then emit to all rooms
 	// passed into the chat message
 	case ChatType:
-		for _, meta := range m.Rooms {
-			if _, ok := bc.unsafe.rooms[meta.Name]; !ok {
-				continue
-			}
-			for _, conn := range bc.unsafe.rooms[meta.Name].connections {
-				conn.Emit(m.Event, m.Content...)
-			}
-		}
 		bc.unsafe.lock.Unlock()
+
+		names := make([]string, len(m.Rooms))
+		for i, meta := range m.Rooms {
+			names[i] = meta.Name
+		}
+		for _, conn := range bc.roomConnections(names...) {
+			conn.Emit(m.Event, m.Content...)
+		}
 		return
 	// Clear the entire room
 	case ClearType:
